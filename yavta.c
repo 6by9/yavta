@@ -42,6 +42,7 @@ struct device
 	enum v4l2_memory memtype;
 	unsigned int nbufs;
 	unsigned int bufsize;
+	unsigned int imagesize;
 	void **mem;
 };
 
@@ -185,6 +186,8 @@ static int video_get_format(struct device *dev)
 			errno);
 		return ret;
 	}
+
+	dev->imagesize = fmt.fmt.pix.bytesperline ? fmt.fmt.pix.sizeimage : 0;
 
 	printf("Video format: %c%c%c%c (%08x) %ux%u\n",
 		(fmt.fmt.pix.pixelformat >> 0) & 0xff,
@@ -764,6 +767,11 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 			if (dev->memtype == V4L2_MEMORY_USERPTR)
 				buf.m.userptr = (unsigned long)dev->mem[i];
 		}
+
+		if (dev->type == V4L2_BUF_TYPE_VIDEO_CAPTURE &&
+		    dev->imagesize != 0	&& buf.bytesused != dev->imagesize)
+			printf("Warning: bytes used %u != image size %u\n",
+			       buf.bytesused, dev->imagesize);
 
 		size += buf.bytesused;
 
