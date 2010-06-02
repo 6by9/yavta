@@ -385,6 +385,7 @@ static int video_queue_buffer(struct device *dev, int index)
 	buf.index = index;
 	buf.type = dev->type;
 	buf.memory = dev->memtype;
+	buf.length = dev->bufsize;
 	if (dev->memtype == V4L2_MEMORY_USERPTR)
 		buf.m.userptr = (unsigned long)dev->mem[index];
 
