@@ -270,6 +270,7 @@ static int video_alloc_buffers(struct device *dev, int nbufs)
 {
 	struct v4l2_requestbuffers rb;
 	struct v4l2_buffer buf;
+	int page_size;
 	void **bufmem;
 	unsigned int i;
 	int ret;
@@ -290,6 +291,8 @@ static int video_alloc_buffers(struct device *dev, int nbufs)
 	bufmem = malloc(rb.count * sizeof bufmem[0]);
 	if (bufmem == NULL)
 		return -ENOMEM;
+
+	page_size = getpagesize();
 
 	/* Map the buffers. */
 	for (i = 0; i < rb.count; ++i) {
@@ -315,9 +318,9 @@ static int video_alloc_buffers(struct device *dev, int nbufs)
 			break;
 
 		case V4L2_MEMORY_USERPTR:
-			bufmem[i] = malloc(buf.length);
-			if (bufmem[i] == NULL) {
-				printf("Unable to allocate buffer %u (%d)\n", i, errno);
+			ret = posix_memalign(&bufmem[i], page_size, buf.length);
+			if (ret < 0) {
+				printf("Unable to allocate buffer %u (%d)\n", i, ret);
 				return -ENOMEM;
 			}
 			printf("Buffer %u allocated at address %p.\n", i, bufmem[i]);
