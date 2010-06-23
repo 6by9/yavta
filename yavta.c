@@ -266,7 +266,7 @@ static int video_set_framerate(struct device *dev, struct v4l2_fract *time_per_f
 	return 0;
 }
 
-static int video_alloc_buffers(struct device *dev, int nbufs)
+static int video_alloc_buffers(struct device *dev, int nbufs, unsigned int offset)
 {
 	struct v4l2_requestbuffers rb;
 	struct v4l2_buffer buf;
@@ -318,11 +318,12 @@ static int video_alloc_buffers(struct device *dev, int nbufs)
 			break;
 
 		case V4L2_MEMORY_USERPTR:
-			ret = posix_memalign(&bufmem[i], page_size, buf.length);
+			ret = posix_memalign(&bufmem[i], page_size, buf.length + offset);
 			if (ret < 0) {
 				printf("Unable to allocate buffer %u (%d)\n", i, ret);
 				return -ENOMEM;
 			}
+			bufmem[i] += offset;
 			printf("Buffer %u allocated at address %p.\n", i, bufmem[i]);
 			break;
 
@@ -712,13 +713,13 @@ static int video_set_quality(struct device *dev, unsigned int quality)
 	return 0;
 }
 
-static int video_prepare_capture(struct device *dev, int nbufs)
+static int video_prepare_capture(struct device *dev, int nbufs, unsigned int offset)
 {
 	unsigned int i;
 	int ret;
 
 	/* Allocate and map buffers. */
-	if ((ret = video_alloc_buffers(dev, nbufs)) < 0)
+	if ((ret = video_alloc_buffers(dev, nbufs, offset)) < 0)
 		return ret;
 
 	/* Queue the buffers. */
@@ -859,6 +860,7 @@ static void usage(const char *argv0)
 	printf("    --enum-formats		Enumerate formats\n");
 	printf("    --enum-inputs		Enumerate inputs\n");
 	printf("    --no-query			Don't query capabilities on open\n");
+	printf("    --offset			User pointer buffer offset from page start\n");
 	printf("    --skip n			Skip the first n frames\n");
 	printf("    --sleep-forever		Sleep forever after configuring the device\n");
 }
@@ -868,6 +870,7 @@ static void usage(const char *argv0)
 #define OPT_SKIP_FRAMES		258
 #define OPT_NO_QUERY		259
 #define OPT_SLEEP_FOREVER	260
+#define OPT_USERPTR_OFFSET	261
 
 static struct option opts[] = {
 	{"capture", 2, 0, 'c'},
@@ -881,6 +884,7 @@ static struct option opts[] = {
 	{"list-controls", 0, 0, 'l'},
 	{"nbufs", 1, 0, 'n'},
 	{"no-query", 0, 0, OPT_NO_QUERY},
+	{"offset", 1, 0, OPT_USERPTR_OFFSET},
 	{"pause", 0, 0, 'p'},
 	{"quality", 1, 0, 'q'},
 	{"get-control", 1, 0, 'r'},
@@ -922,6 +926,7 @@ int main(int argc, char *argv[])
 	unsigned int input = 0;
 	unsigned int skip = 0;
 	unsigned int quality = (unsigned int)-1;
+	unsigned int userptr_offset = 0;
 	struct v4l2_fract time_per_frame = {1, 25};
 
 	/* Capture loop */
@@ -1048,6 +1053,9 @@ int main(int argc, char *argv[])
 		case OPT_SLEEP_FOREVER:
 			do_sleep_forever = 1;
 			break;
+		case OPT_USERPTR_OFFSET:
+			userptr_offset = atoi(optarg);
+			break;
 		default:
 			printf("Invalid option -%c\n", c);
 			printf("Run %s -h for help.\n", argv[0]);
@@ -1129,7 +1137,7 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	if (video_prepare_capture(&dev, nbufs)) {
+	if (video_prepare_capture(&dev, nbufs, userptr_offset)) {
 		video_close(&dev);
 		return 1;
 	}
