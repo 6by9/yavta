@@ -1,8 +1,8 @@
 CROSS_COMPILE ?=
 
 CC	:= $(CROSS_COMPILE)gcc
-CFLAGS	:= -O2 -W -Wall
-LDFLAGS	:=
+CFLAGS	?= -O2 -W -Wall
+LDFLAGS	?=
 
 %.o : %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
