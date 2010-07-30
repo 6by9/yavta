@@ -845,7 +845,7 @@ static void usage(const char *argv0)
 	printf("-c, --capture[=nframes]		Capture frames\n");
 	printf("-d, --delay			Delay (in ms) before requeuing buffers\n");
 	printf("-f, --format format		Set the video format\n");
-	printf("-F, --file prefix		Read/write frames from/to disk\n");
+	printf("-F, --file[=prefix]		Read/write frames from/to disk\n");
 	printf("-h, --help			Show this help screen\n");
 	printf("-i, --input input		Select the video input\n");
 	printf("-l, --list-controls		List available controls\n");
@@ -934,7 +934,7 @@ int main(int argc, char *argv[])
 	const char *filename = "frame";
 
 	opterr = 0;
-	while ((c = getopt_long(argc, argv, "cd:f:Fhi:ln:pq:r:s:t:uw:", opts, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "c::d:f:F::hi:ln:pq:r:s:t:uw:", opts, NULL)) != -1) {
 
 		switch (c) {
 		case 'c':
