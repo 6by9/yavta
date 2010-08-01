@@ -735,7 +735,7 @@ static int video_prepare_capture(struct device *dev, int nbufs, unsigned int off
 static int video_do_capture(struct device *dev, unsigned int nframes,
 	unsigned int skip, unsigned int delay, const char *filename_prefix)
 {
-	char *filename;
+	char *filename = NULL;
 	struct timeval start, end, ts;
 	struct v4l2_buffer buf;
 	unsigned int size;
