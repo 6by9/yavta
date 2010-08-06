@@ -42,8 +42,14 @@ struct device
 	enum v4l2_memory memtype;
 	unsigned int nbufs;
 	unsigned int bufsize;
-	unsigned int imagesize;
 	void **mem;
+
+	unsigned int width;
+	unsigned int height;
+	unsigned int bytesperline;
+	unsigned int imagesize;
+
+	void *pattern;
 };
 
 static const char *v4l2_buf_type_name(enum v4l2_buf_type type)
@@ -132,6 +138,7 @@ static int video_open(struct device *dev, const char *devname, int no_query)
 
 static void video_close(struct device *dev)
 {
+	free(dev->pattern);
 	free(dev->mem);
 	close(dev->fd);
 }
@@ -187,6 +194,9 @@ static int video_get_format(struct device *dev)
 		return ret;
 	}
 
+	dev->width = fmt.fmt.pix.width;
+	dev->height = fmt.fmt.pix.height;
+	dev->bytesperline = fmt.fmt.pix.bytesperline;
 	dev->imagesize = fmt.fmt.pix.bytesperline ? fmt.fmt.pix.sizeimage : 0;
 
 	printf("Video format: %c%c%c%c (%08x) %ux%u\n",
@@ -392,7 +402,7 @@ static int video_queue_buffer(struct device *dev, int index)
 
 	if (dev->type == V4L2_BUF_TYPE_VIDEO_OUTPUT) {
 		buf.bytesused = buf.length;
-		memset(dev->mem[buf.index], 0, buf.bytesused);
+		memcpy(dev->mem[buf.index], dev->pattern, buf.bytesused);
 	}
 
 	ret = ioctl(dev->fd, VIDIOC_QBUF, &buf);
@@ -713,7 +723,56 @@ static int video_set_quality(struct device *dev, unsigned int quality)
 	return 0;
 }
 
-static int video_prepare_capture(struct device *dev, int nbufs, unsigned int offset)
+static int video_load_test_pattern(struct device *dev, const char *filename)
+{
+	unsigned int x, y;
+	uint8_t *data;
+	int ret;
+	int fd;
+
+	/* Load or generate the test pattern */
+	dev->pattern = malloc(dev->bufsize);
+	if (dev->pattern == NULL)
+		return -ENOMEM;
+
+	if (filename == NULL) {
+		if (dev->bytesperline == 0) {
+			printf("Compressed format detect and no test pattern filename given.\n"
+				"The test pattern can't be generated automatically.\n");
+			return -EINVAL;
+		}
+
+		data = dev->pattern;
+
+		for (y = 0; y < dev->height; ++y) {
+			for (x = 0; x < dev->bytesperline; ++x)
+				*data++ = x + y;
+		}
+
+		return 0;
+	}
+
+	fd = open(filename, O_RDONLY);
+	if (fd == -1) {
+		printf("Unable to open test pattern file '%s': %s.\n", filename,
+			strerror(errno));
+		return -errno;
+	}
+
+	ret = read(fd, dev->pattern, dev->bufsize);
+	close(fd);
+
+	if (ret != (int)dev->bufsize) {
+		printf("Test pattern file size %u doesn't match image size %u\n",
+			ret, dev->bufsize);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int video_prepare_capture(struct device *dev, int nbufs, unsigned int offset,
+				 const char *filename)
 {
 	unsigned int i;
 	int ret;
@@ -721,6 +780,12 @@ static int video_prepare_capture(struct device *dev, int nbufs, unsigned int off
 	/* Allocate and map buffers. */
 	if ((ret = video_alloc_buffers(dev, nbufs, offset)) < 0)
 		return ret;
+
+	if (dev->type == V4L2_BUF_TYPE_VIDEO_OUTPUT) {
+		ret = video_load_test_pattern(dev, filename);
+		if (ret < 0)
+			return ret;
+	}
 
 	/* Queue the buffers. */
 	for (i = 0; i < dev->nbufs; ++i) {
@@ -1114,7 +1179,7 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	if (!no_query)
+	if (!no_query || do_capture)
 		video_get_format(&dev);
 
 	/* Set the frame rate. */
@@ -1139,7 +1204,7 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	if (video_prepare_capture(&dev, nbufs, userptr_offset)) {
+	if (video_prepare_capture(&dev, nbufs, userptr_offset, filename)) {
 		video_close(&dev);
 		return 1;
 	}
