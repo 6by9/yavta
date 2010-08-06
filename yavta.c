@@ -882,6 +882,9 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 	/* Stop streaming. */
 	video_enable(dev, 0);
 
+	if (end.tv_sec == start.tv_sec && end.tv_usec == start.tv_usec)
+		goto done;
+
 	end.tv_sec -= start.tv_sec;
 	end.tv_usec -= start.tv_usec;
 	if (end.tv_usec < 0) {
