@@ -798,7 +798,8 @@ static int video_prepare_capture(struct device *dev, int nbufs, unsigned int off
 }
 
 static int video_do_capture(struct device *dev, unsigned int nframes,
-	unsigned int skip, unsigned int delay, const char *filename_prefix)
+	unsigned int skip, unsigned int delay, const char *filename_prefix,
+	int do_requeue_last)
 {
 	char *filename = NULL;
 	struct timeval start, end, ts;
@@ -869,13 +870,16 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 		if (delay > 0)
 			usleep(delay * 1000);
 
+		fflush(stdout);
+
+		if (i == nframes - dev->nbufs && !do_requeue_last)
+			continue;
+
 		ret = video_queue_buffer(dev, buf.index);
 		if (ret < 0) {
 			printf("Unable to requeue buffer (%d).\n", errno);
 			goto done;
 		}
-
-		fflush(stdout);
 	}
 	gettimeofday(&end, NULL);
 
@@ -929,6 +933,7 @@ static void usage(const char *argv0)
 	printf("    --enum-inputs		Enumerate inputs\n");
 	printf("    --no-query			Don't query capabilities on open\n");
 	printf("    --offset			User pointer buffer offset from page start\n");
+	printf("    --requeue-last		Requeue the last buffers before streamoff\n");
 	printf("    --skip n			Skip the first n frames\n");
 	printf("    --sleep-forever		Sleep forever after configuring the device\n");
 }
@@ -939,6 +944,7 @@ static void usage(const char *argv0)
 #define OPT_NO_QUERY		259
 #define OPT_SLEEP_FOREVER	260
 #define OPT_USERPTR_OFFSET	261
+#define OPT_REQUEUE_LAST	262
 
 static struct option opts[] = {
 	{"capture", 2, 0, 'c'},
@@ -956,6 +962,7 @@ static struct option opts[] = {
 	{"pause", 0, 0, 'p'},
 	{"quality", 1, 0, 'q'},
 	{"get-control", 1, 0, 'r'},
+	{"requeue-last", 0, 0, OPT_REQUEUE_LAST},
 	{"size", 1, 0, 's'},
 	{"set-control", 1, 0, 'w'},
 	{"skip", 1, 0, OPT_SKIP_FRAMES},
@@ -976,7 +983,7 @@ int main(int argc, char *argv[])
 	int do_enum_formats = 0, do_set_format = 0;
 	int do_enum_inputs = 0, do_set_input = 0;
 	int do_list_controls = 0, do_get_control = 0, do_set_control = 0;
-	int do_sleep_forever = 0;
+	int do_sleep_forever = 0, do_requeue_last = 0;
 	int no_query = 0;
 	char *endptr;
 	int c;
@@ -1117,6 +1124,9 @@ int main(int argc, char *argv[])
 		case OPT_NO_QUERY:
 			no_query = 1;
 			break;
+		case OPT_REQUEUE_LAST:
+			do_requeue_last = 1;
+			break;
 		case OPT_SKIP_FRAMES:
 			skip = atoi(optarg);
 			break;
@@ -1217,7 +1227,7 @@ int main(int argc, char *argv[])
 		getchar();
 	}
 
-	if (video_do_capture(&dev, nframes, skip, delay, filename) < 0) {
+	if (video_do_capture(&dev, nframes, skip, delay, filename, do_requeue_last) < 0) {
 		video_close(&dev);
 		return 1;
 	}
