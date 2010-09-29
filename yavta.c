@@ -127,7 +127,7 @@ static int video_open(struct device *dev, const char *devname, int no_query)
 			return -EINVAL;
 		}
 
-		printf("Device %s opened: %s.\n", devname, cap.card);
+		printf("Device %s opened: %s (%s).\n", devname, cap.card, cap.bus_info);
 	} else {
 		dev->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 		printf("Device %s opened.\n", devname);
