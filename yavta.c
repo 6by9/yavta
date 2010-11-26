@@ -32,6 +32,10 @@
 
 #include <linux/videodev2.h>
 
+#ifndef V4L2_BUF_FLAG_ERROR
+#define V4L2_BUF_FLAG_ERROR	0x0040
+#endif
+
 #define ARRAY_SIZE(a)	(sizeof(a)/sizeof((a)[0]))
 
 struct device
@@ -847,8 +851,9 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 		size += buf.bytesused;
 
 		gettimeofday(&ts, NULL);
-		printf("%u (%u) %u bytes %ld.%06ld %ld.%06ld\n", i, buf.index,
-			buf.bytesused, buf.timestamp.tv_sec,
+		printf("%u (%u) [%c] %u %u bytes %ld.%06ld %ld.%06ld\n", i, buf.index,
+			(buf.flags & V4L2_BUF_FLAG_ERROR) ? 'E' : '-',
+			buf.sequence, buf.bytesused, buf.timestamp.tv_sec,
 			buf.timestamp.tv_usec, ts.tv_sec, ts.tv_usec);
 
 		if (i == 0)
