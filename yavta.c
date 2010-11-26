@@ -806,7 +806,8 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 	int do_requeue_last)
 {
 	char *filename = NULL;
-	struct timeval start, end, ts;
+	struct timeval start = { 0, 0 };
+	struct timeval end, ts;
 	struct v4l2_buffer buf;
 	unsigned int size;
 	unsigned int i;
@@ -890,6 +891,11 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 
 	/* Stop streaming. */
 	video_enable(dev, 0);
+
+	if (nframes == 0) {
+		printf("No frames captured.\n");
+		goto done;
+	}
 
 	if (end.tv_sec == start.tv_sec && end.tv_usec == start.tv_usec)
 		goto done;
