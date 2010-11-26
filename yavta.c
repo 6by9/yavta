@@ -1049,6 +1049,8 @@ int main(int argc, char *argv[])
 				pixelformat = V4L2_PIX_FMT_UYVY;
 			else if (strcasecmp(optarg, "Y16") == 0)
 				pixelformat = V4L2_PIX_FMT_Y16;
+			else if (strcasecmp(optarg, "SGRBG10_DPMC8") == 0)
+				pixelformat = V4L2_PIX_FMT_SGRBG10DPCM8;
 			else if (strcasecmp(optarg, "SGRBG10") == 0)
 				pixelformat = V4L2_PIX_FMT_SGRBG10;
 			else if (strcasecmp(optarg, "DV") == 0)
