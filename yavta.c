@@ -38,6 +38,12 @@
 
 #define ARRAY_SIZE(a)	(sizeof(a)/sizeof((a)[0]))
 
+struct buffer
+{
+	unsigned int size;
+	void *mem;
+};
+
 struct device
 {
 	int fd;
@@ -45,8 +51,7 @@ struct device
 	enum v4l2_buf_type type;
 	enum v4l2_memory memtype;
 	unsigned int nbufs;
-	unsigned int bufsize;
-	void **mem;
+	struct buffer *buffers;
 
 	unsigned int width;
 	unsigned int height;
@@ -102,7 +107,7 @@ static int video_open(struct device *dev, const char *devname, int no_query)
 	memset(dev, 0, sizeof *dev);
 	dev->fd = -1;
 	dev->memtype = V4L2_MEMORY_MMAP;
-	dev->mem = NULL;
+	dev->buffers = NULL;
 
 	dev->fd = open(devname, O_RDWR);
 	if (dev->fd < 0) {
@@ -143,7 +148,7 @@ static int video_open(struct device *dev, const char *devname, int no_query)
 static void video_close(struct device *dev)
 {
 	free(dev->pattern);
-	free(dev->mem);
+	free(dev->buffers);
 	close(dev->fd);
 }
 
@@ -285,7 +290,7 @@ static int video_alloc_buffers(struct device *dev, int nbufs, unsigned int offse
 	struct v4l2_requestbuffers rb;
 	struct v4l2_buffer buf;
 	int page_size;
-	void **bufmem;
+	struct buffer *buffers;
 	unsigned int i;
 	int ret;
 
@@ -302,8 +307,8 @@ static int video_alloc_buffers(struct device *dev, int nbufs, unsigned int offse
 
 	printf("%u buffers requested.\n", rb.count);
 
-	bufmem = malloc(rb.count * sizeof bufmem[0]);
-	if (bufmem == NULL)
+	buffers = malloc(rb.count * sizeof buffers[0]);
+	if (buffers == NULL)
 		return -ENOMEM;
 
 	page_size = getpagesize();
@@ -323,22 +328,24 @@ static int video_alloc_buffers(struct device *dev, int nbufs, unsigned int offse
 
 		switch (dev->memtype) {
 		case V4L2_MEMORY_MMAP:
-			bufmem[i] = mmap(0, buf.length, PROT_READ | PROT_WRITE, MAP_SHARED, dev->fd, buf.m.offset);
-			if (bufmem[i] == MAP_FAILED) {
+			buffers[i].mem = mmap(0, buf.length, PROT_READ | PROT_WRITE, MAP_SHARED, dev->fd, buf.m.offset);
+			if (buffers[i].mem == MAP_FAILED) {
 				printf("Unable to map buffer %u (%d)\n", i, errno);
 				return ret;
 			}
-			printf("Buffer %u mapped at address %p.\n", i, bufmem[i]);
+			buffers[i].size = buf.length;
+			printf("Buffer %u mapped at address %p.\n", i, buffers[i].mem);
 			break;
 
 		case V4L2_MEMORY_USERPTR:
-			ret = posix_memalign(&bufmem[i], page_size, buf.length + offset);
+			ret = posix_memalign(&buffers[i].mem, page_size, buf.length + offset);
 			if (ret < 0) {
 				printf("Unable to allocate buffer %u (%d)\n", i, ret);
 				return -ENOMEM;
 			}
-			bufmem[i] += offset;
-			printf("Buffer %u allocated at address %p.\n", i, bufmem[i]);
+			buffers[i].mem += offset;
+			buffers[i].size = buf.length;
+			printf("Buffer %u allocated at address %p.\n", i, buffers[i].mem);
 			break;
 
 		default:
@@ -346,9 +353,8 @@ static int video_alloc_buffers(struct device *dev, int nbufs, unsigned int offse
 		}
 	}
 
-	dev->mem = bufmem;
+	dev->buffers = buffers;
 	dev->nbufs = rb.count;
-	dev->bufsize = buf.length;
 	return 0;
 }
 
@@ -363,7 +369,7 @@ static int video_free_buffers(struct device *dev)
 
 	if (dev->memtype == V4L2_MEMORY_MMAP) {
 		for (i = 0; i < dev->nbufs; ++i) {
-			ret = munmap(dev->mem[i], dev->bufsize);
+			ret = munmap(dev->buffers[i].mem, dev->buffers[i].size);
 			if (ret < 0) {
 				printf("Unable to unmap buffer %u (%d)\n", i, errno);
 				return ret;
@@ -384,9 +390,9 @@ static int video_free_buffers(struct device *dev)
 
 	printf("%u buffers released.\n", dev->nbufs);
 
-	free(dev->mem);
+	free(dev->buffers);
 	dev->nbufs = 0;
-	dev->mem = NULL;
+	dev->buffers = NULL;
 
 	return 0;
 }
@@ -400,14 +406,15 @@ static int video_queue_buffer(struct device *dev, int index)
 	buf.index = index;
 	buf.type = dev->type;
 	buf.memory = dev->memtype;
-	buf.length = dev->bufsize;
+	buf.length = dev->buffers[index].size;
 	if (dev->memtype == V4L2_MEMORY_USERPTR)
-		buf.m.userptr = (unsigned long)dev->mem[index];
+		buf.m.userptr = (unsigned long)dev->buffers[index].mem;
 
 	if (dev->type == V4L2_BUF_TYPE_VIDEO_OUTPUT) {
 		buf.bytesused = buf.length;
-		memcpy(dev->mem[buf.index], dev->pattern, buf.bytesused);
-	}
+		memcpy(dev->buffers[buf.index].mem, dev->pattern, buf.bytesused);
+	} else
+		memset(dev->buffers[buf.index].mem, 0x55, buf.length);
 
 	ret = ioctl(dev->fd, VIDIOC_QBUF, &buf);
 	if (ret < 0)
@@ -729,13 +736,14 @@ static int video_set_quality(struct device *dev, unsigned int quality)
 
 static int video_load_test_pattern(struct device *dev, const char *filename)
 {
+	unsigned int size = dev->buffers[0].size;
 	unsigned int x, y;
 	uint8_t *data;
 	int ret;
 	int fd;
 
 	/* Load or generate the test pattern */
-	dev->pattern = malloc(dev->bufsize);
+	dev->pattern = malloc(size);
 	if (dev->pattern == NULL)
 		return -ENOMEM;
 
@@ -763,12 +771,12 @@ static int video_load_test_pattern(struct device *dev, const char *filename)
 		return -errno;
 	}
 
-	ret = read(fd, dev->pattern, dev->bufsize);
+	ret = read(fd, dev->pattern, size);
 	close(fd);
 
-	if (ret != (int)dev->bufsize) {
+	if (ret != (int)size) {
 		printf("Test pattern file size %u doesn't match image size %u\n",
-			ret, dev->bufsize);
+			ret, size);
 		return -EINVAL;
 	}
 
@@ -841,7 +849,7 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 			buf.type = dev->type;
 			buf.memory = dev->memtype;
 			if (dev->memtype == V4L2_MEMORY_USERPTR)
-				buf.m.userptr = (unsigned long)dev->mem[i];
+				buf.m.userptr = (unsigned long)dev->buffers[i].mem;
 		}
 
 		if (dev->type == V4L2_BUF_TYPE_VIDEO_CAPTURE &&
@@ -865,7 +873,7 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 			sprintf(filename, "%s-%06u.bin", filename_prefix, i);
 			file = fopen(filename, "wb");
 			if (file != NULL) {
-				ret = fwrite(dev->mem[buf.index], buf.bytesused, 1, file);
+				ret = fwrite(dev->buffers[buf.index].mem, buf.bytesused, 1, file);
 				fclose(file);
 			}
 		}
