@@ -1053,6 +1053,10 @@ int main(int argc, char *argv[])
 				pixelformat = V4L2_PIX_FMT_SGRBG10DPCM8;
 			else if (strcasecmp(optarg, "SGRBG10") == 0)
 				pixelformat = V4L2_PIX_FMT_SGRBG10;
+#ifdef V4L2_PIX_FMT_SGRBG12
+			else if (strcasecmp(optarg, "SGRBG12") == 0)
+				pixelformat = V4L2_PIX_FMT_SGRBG12;
+#endif
 			else if (strcasecmp(optarg, "DV") == 0)
 				pixelformat = V4L2_PIX_FMT_DV;
 			else {
