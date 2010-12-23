@@ -814,8 +814,8 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 	int do_requeue_last)
 {
 	char *filename = NULL;
-	struct timeval start = { 0, 0 };
-	struct timeval end, ts;
+	struct timeval start;
+	struct timeval ts;
 	struct v4l2_buffer buf;
 	unsigned int size;
 	unsigned int i;
@@ -834,6 +834,7 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 	video_enable(dev, 1);
 
 	size = 0;
+	gettimeofday(&start, NULL);
 
 	for (i = 0; i < nframes; ++i) {
 		/* Dequeue a buffer. */
@@ -865,9 +866,6 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 			buf.sequence, buf.bytesused, buf.timestamp.tv_sec,
 			buf.timestamp.tv_usec, ts.tv_sec, ts.tv_usec);
 
-		if (i == 0)
-			start = ts;
-
 		/* Save the image. */
 		if (dev->type == V4L2_BUF_TYPE_VIDEO_CAPTURE && filename_prefix && !skip) {
 			sprintf(filename, "%s-%06u.bin", filename_prefix, i);
@@ -895,7 +893,6 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 			goto done;
 		}
 	}
-	gettimeofday(&end, NULL);
 
 	/* Stop streaming. */
 	video_enable(dev, 0);
@@ -905,21 +902,21 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 		goto done;
 	}
 
-	if (end.tv_sec == start.tv_sec && end.tv_usec == start.tv_usec)
+	if (ts.tv_sec == start.tv_sec && ts.tv_usec == start.tv_usec)
 		goto done;
 
-	end.tv_sec -= start.tv_sec;
-	end.tv_usec -= start.tv_usec;
-	if (end.tv_usec < 0) {
-		end.tv_sec--;
-		end.tv_usec += 1000000;
+	ts.tv_sec -= start.tv_sec;
+	ts.tv_usec -= start.tv_usec;
+	if (ts.tv_usec < 0) {
+		ts.tv_sec--;
+		ts.tv_usec += 1000000;
 	}
 
-	bps = size/(end.tv_usec+1000000.0*end.tv_sec)*1000000.0;
-	fps = (i-1)/(end.tv_usec+1000000.0*end.tv_sec)*1000000.0;
+	bps = size/(ts.tv_usec+1000000.0*ts.tv_sec)*1000000.0;
+	fps = i/(ts.tv_usec+1000000.0*ts.tv_sec)*1000000.0;
 
 	printf("Captured %u frames in %lu.%06lu seconds (%f fps, %f B/s).\n",
-		i-1, end.tv_sec, end.tv_usec, fps, bps);
+		i, ts.tv_sec, ts.tv_usec, fps, bps);
 
 done:
 	free(filename);
