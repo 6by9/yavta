@@ -815,6 +815,7 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 {
 	char *filename = NULL;
 	struct timeval start;
+	struct timeval last;
 	struct timeval ts;
 	struct v4l2_buffer buf;
 	unsigned int size;
@@ -835,6 +836,7 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 
 	size = 0;
 	gettimeofday(&start, NULL);
+	last = start;
 
 	for (i = 0; i < nframes; ++i) {
 		/* Dequeue a buffer. */
@@ -860,11 +862,17 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 
 		size += buf.bytesused;
 
+		fps = (buf.timestamp.tv_sec - last.tv_sec) * 1000000
+		    + buf.timestamp.tv_usec - last.tv_usec;
+		fps = fps ? 1000000.0 / fps : 0.0;
+
 		gettimeofday(&ts, NULL);
-		printf("%u (%u) [%c] %u %u bytes %ld.%06ld %ld.%06ld\n", i, buf.index,
+		printf("%u (%u) [%c] %u %u bytes %ld.%06ld %ld.%06ld %.3f fps\n", i, buf.index,
 			(buf.flags & V4L2_BUF_FLAG_ERROR) ? 'E' : '-',
 			buf.sequence, buf.bytesused, buf.timestamp.tv_sec,
-			buf.timestamp.tv_usec, ts.tv_sec, ts.tv_usec);
+			buf.timestamp.tv_usec, ts.tv_sec, ts.tv_usec, fps);
+
+		last = buf.timestamp;
 
 		/* Save the image. */
 		if (dev->type == V4L2_BUF_TYPE_VIDEO_CAPTURE && filename_prefix && !skip) {
