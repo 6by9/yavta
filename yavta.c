@@ -59,6 +59,7 @@ struct device
 	unsigned int imagesize;
 
 	void *pattern;
+	unsigned int patternsize;
 };
 
 static const char *v4l2_buf_type_name(enum v4l2_buf_type type)
@@ -411,8 +412,8 @@ static int video_queue_buffer(struct device *dev, int index)
 		buf.m.userptr = (unsigned long)dev->buffers[index].mem;
 
 	if (dev->type == V4L2_BUF_TYPE_VIDEO_OUTPUT) {
-		buf.bytesused = buf.length;
-		memcpy(dev->buffers[buf.index].mem, dev->pattern, buf.bytesused);
+		buf.bytesused = dev->patternsize;
+		memcpy(dev->buffers[buf.index].mem, dev->pattern, dev->patternsize);
 	} else
 		memset(dev->buffers[buf.index].mem, 0x55, buf.length);
 
@@ -774,12 +775,13 @@ static int video_load_test_pattern(struct device *dev, const char *filename)
 	ret = read(fd, dev->pattern, size);
 	close(fd);
 
-	if (ret != (int)size) {
+	if (ret != (int)size && dev->bytesperline != 0) {
 		printf("Test pattern file size %u doesn't match image size %u\n",
 			ret, size);
 		return -EINVAL;
 	}
 
+	dev->patternsize = ret;
 	return 0;
 }
 
