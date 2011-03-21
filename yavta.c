@@ -39,8 +39,16 @@
 
 #define ARRAY_SIZE(a)	(sizeof(a)/sizeof((a)[0]))
 
+enum buffer_fill_mode
+{
+	BUFFER_FILL_NONE = 0,
+	BUFFER_FILL_FRAME = 1 << 0,
+	BUFFER_FILL_PADDING = 1 << 1,
+};
+
 struct buffer
 {
+	unsigned int padding;
 	unsigned int size;
 	void *mem;
 };
@@ -343,7 +351,8 @@ static int video_set_framerate(struct device *dev, struct v4l2_fract *time_per_f
 	return 0;
 }
 
-static int video_alloc_buffers(struct device *dev, int nbufs, unsigned int offset)
+static int video_alloc_buffers(struct device *dev, int nbufs,
+	unsigned int offset, unsigned int padding)
 {
 	struct v4l2_requestbuffers rb;
 	struct v4l2_buffer buf;
@@ -392,17 +401,19 @@ static int video_alloc_buffers(struct device *dev, int nbufs, unsigned int offse
 				return ret;
 			}
 			buffers[i].size = buf.length;
+			buffers[i].padding = 0;
 			printf("Buffer %u mapped at address %p.\n", i, buffers[i].mem);
 			break;
 
 		case V4L2_MEMORY_USERPTR:
-			ret = posix_memalign(&buffers[i].mem, page_size, buf.length + offset);
+			ret = posix_memalign(&buffers[i].mem, page_size, buf.length + offset + padding);
 			if (ret < 0) {
 				printf("Unable to allocate buffer %u (%d)\n", i, ret);
 				return -ENOMEM;
 			}
 			buffers[i].mem += offset;
 			buffers[i].size = buf.length;
+			buffers[i].padding = padding;
 			printf("Buffer %u allocated at address %p.\n", i, buffers[i].mem);
 			break;
 
@@ -466,7 +477,7 @@ static int video_free_buffers(struct device *dev)
 	return 0;
 }
 
-static int video_queue_buffer(struct device *dev, int index)
+static int video_queue_buffer(struct device *dev, int index, enum buffer_fill_mode fill)
 {
 	struct v4l2_buffer buf;
 	int ret;
@@ -482,8 +493,13 @@ static int video_queue_buffer(struct device *dev, int index)
 	if (dev->type == V4L2_BUF_TYPE_VIDEO_OUTPUT) {
 		buf.bytesused = dev->patternsize;
 		memcpy(dev->buffers[buf.index].mem, dev->pattern, dev->patternsize);
-	} else
-		memset(dev->buffers[buf.index].mem, 0x55, buf.length);
+	} else {
+		if (fill & BUFFER_FILL_FRAME)
+			memset(dev->buffers[buf.index].mem, 0x55, dev->buffers[index].size);
+		if (fill & BUFFER_FILL_PADDING)
+			memset(dev->buffers[buf.index].mem + dev->buffers[index].size,
+			       0x55, dev->buffers[index].padding);
+	}
 
 	ret = ioctl(dev->fd, VIDIOC_QBUF, &buf);
 	if (ret < 0)
@@ -859,13 +875,15 @@ static int video_load_test_pattern(struct device *dev, const char *filename)
 }
 
 static int video_prepare_capture(struct device *dev, int nbufs, unsigned int offset,
-				 const char *filename)
+				 const char *filename, enum buffer_fill_mode fill)
 {
+	unsigned int padding;
 	unsigned int i;
 	int ret;
 
 	/* Allocate and map buffers. */
-	if ((ret = video_alloc_buffers(dev, nbufs, offset)) < 0)
+	padding = (fill & BUFFER_FILL_PADDING) ? 4096 : 0;
+	if ((ret = video_alloc_buffers(dev, nbufs, offset, padding)) < 0)
 		return ret;
 
 	if (dev->type == V4L2_BUF_TYPE_VIDEO_OUTPUT) {
@@ -876,7 +894,7 @@ static int video_prepare_capture(struct device *dev, int nbufs, unsigned int off
 
 	/* Queue the buffers. */
 	for (i = 0; i < dev->nbufs; ++i) {
-		ret = video_queue_buffer(dev, i);
+		ret = video_queue_buffer(dev, i, fill);
 		if (ret < 0)
 			return ret;
 	}
@@ -884,9 +902,42 @@ static int video_prepare_capture(struct device *dev, int nbufs, unsigned int off
 	return 0;
 }
 
+static void video_verify_buffer(struct device *dev, int index)
+{
+	struct buffer *buffer = &dev->buffers[index];
+	const uint8_t *data = buffer->mem + buffer->size;
+	unsigned int errors = 0;
+	unsigned int dirty = 0;
+	unsigned int i;
+
+	if (buffer->padding == 0)
+		return;
+
+	for (i = 0; i < buffer->padding; ++i) {
+		if (data[i] != 0x55) {
+			errors++;
+			dirty = i + 1;
+		}
+	}
+
+	if (errors) {
+		printf("Warning: %u bytes overwritten among %u first padding bytes\n",
+		       errors, dirty);
+
+		dirty = (dirty + 15) & ~15;
+		dirty = dirty > 32 ? 32 : dirty;
+
+		for (i = 0; i < dirty; ++i) {
+			printf("%02x ", data[i]);
+			if (i % 16 == 15)
+				printf("\n");
+		}
+	}
+}
+
 static int video_do_capture(struct device *dev, unsigned int nframes,
 	unsigned int skip, unsigned int delay, const char *filename_prefix,
-	int do_requeue_last)
+	int do_requeue_last, enum buffer_fill_mode fill)
 {
 	char *filename = NULL;
 	struct timeval start;
@@ -935,6 +986,9 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 			printf("Warning: bytes used %u != image size %u\n",
 			       buf.bytesused, dev->imagesize);
 
+		if (dev->type == V4L2_BUF_TYPE_VIDEO_CAPTURE)
+			video_verify_buffer(dev, buf.index);
+
 		size += buf.bytesused;
 
 		fps = (buf.timestamp.tv_sec - last.tv_sec) * 1000000
@@ -970,7 +1024,7 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 		if (i == nframes - dev->nbufs && !do_requeue_last)
 			continue;
 
-		ret = video_queue_buffer(dev, buf.index);
+		ret = video_queue_buffer(dev, buf.index, fill);
 		if (ret < 0) {
 			printf("Unable to requeue buffer (%d).\n", errno);
 			goto done;
@@ -1014,11 +1068,13 @@ static void usage(const char *argv0)
 	printf("Usage: %s [options] device\n", argv0);
 	printf("Supported options:\n");
 	printf("-c, --capture[=nframes]		Capture frames\n");
+	printf("-C, --check-overrun		Verify dequeued frames for buffer overrun\n");
 	printf("-d, --delay			Delay (in ms) before requeuing buffers\n");
 	printf("-f, --format format		Set the video format\n");
 	printf("-F, --file[=prefix]		Read/write frames from/to disk\n");
 	printf("-h, --help			Show this help screen\n");
 	printf("-i, --input input		Select the video input\n");
+	printf("-I, --fill-frames		Fill frames with check pattern before queuing them\n");
 	printf("-l, --list-controls		List available controls\n");
 	printf("-n, --nbufs n			Set the number of video buffers\n");
 	printf("-p, --pause			Pause before starting the video stream\n");
@@ -1048,10 +1104,12 @@ static void usage(const char *argv0)
 
 static struct option opts[] = {
 	{"capture", 2, 0, 'c'},
+	{"check-overrun", 0, 0, 'C'},
 	{"delay", 1, 0, 'd'},
 	{"enum-formats", 0, 0, OPT_ENUM_FORMATS},
 	{"enum-inputs", 0, 0, OPT_ENUM_INPUTS},
 	{"file", 2, 0, 'F'},
+	{"fill-frames", 0, 0, 'I'},
 	{"format", 1, 0, 'f'},
 	{"help", 0, 0, 'h'},
 	{"input", 1, 0, 'i'},
@@ -1108,19 +1166,23 @@ int main(int argc, char *argv[])
 	struct v4l2_fract time_per_frame = {1, 25};
 
 	/* Capture loop */
+	enum buffer_fill_mode fill_mode = BUFFER_FILL_NONE;
 	unsigned int delay = 0, nframes = (unsigned int)-1;
 	const char *filename = "frame";
 
 	unsigned int rt_priority = 1;
 
 	opterr = 0;
-	while ((c = getopt_long(argc, argv, "c::d:f:F::hi:ln:pq:r:R::s:t:uw:", opts, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "c::Cd:f:F::hi:Iln:pq:r:R::s:t:uw:", opts, NULL)) != -1) {
 
 		switch (c) {
 		case 'c':
 			do_capture = 1;
 			if (optarg)
 				nframes = atoi(optarg);
+			break;
+		case 'C':
+			fill_mode |= BUFFER_FILL_PADDING;
 			break;
 		case 'd':
 			delay = atoi(optarg);
@@ -1144,6 +1206,9 @@ int main(int argc, char *argv[])
 		case 'i':
 			do_set_input = 1;
 			input = atoi(optarg);
+			break;
+		case 'I':
+			fill_mode |= BUFFER_FILL_FRAME;
 			break;
 		case 'l':
 			do_list_controls = 1;
@@ -1242,6 +1307,11 @@ int main(int argc, char *argv[])
 		}
 	}
 
+	if ((fill_mode & BUFFER_FILL_PADDING) && memtype != V4L2_MEMORY_USERPTR) {
+		printf("Buffer overrun can only be checked in USERPTR mode.\n");
+		return 1;
+	}
+
 	if (optind >= argc) {
 		usage(argv[0]);
 		return 1;
@@ -1321,7 +1391,7 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	if (video_prepare_capture(&dev, nbufs, userptr_offset, filename)) {
+	if (video_prepare_capture(&dev, nbufs, userptr_offset, filename, fill_mode)) {
 		video_close(&dev);
 		return 1;
 	}
@@ -1339,7 +1409,8 @@ int main(int argc, char *argv[])
 			printf("Failed to select RR scheduler (%d)\n", errno);
 	}
 
-	if (video_do_capture(&dev, nframes, skip, delay, filename, do_requeue_last) < 0) {
+	if (video_do_capture(&dev, nframes, skip, delay, filename,
+			     do_requeue_last, fill_mode) < 0) {
 		video_close(&dev);
 		return 1;
 	}
