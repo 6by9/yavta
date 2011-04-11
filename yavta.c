@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <getopt.h>
+#include <sched.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/select.h>
@@ -1012,6 +1013,7 @@ static void usage(const char *argv0)
 	printf("-p, --pause			Pause before starting the video stream\n");
 	printf("-q, --quality n			MJPEG quality (0-100)\n");
 	printf("-r, --get-control ctrl		Get control 'ctrl'\n");
+	printf("-R, --realtime=[priority]	Enable realtime RR scheduling\n");
 	printf("-s, --size WxH			Set the frame size\n");
 	printf("-t, --time-per-frame num/denom	Set the time per frame (eg. 1/25 = 25 fps)\n");
 	printf("-u, --userptr			Use the user pointers streaming method\n");
@@ -1050,6 +1052,7 @@ static struct option opts[] = {
 	{"quality", 1, 0, 'q'},
 	{"get-control", 1, 0, 'r'},
 	{"requeue-last", 0, 0, OPT_REQUEUE_LAST},
+	{"realtime", 2, 0, 'R'},
 	{"size", 1, 0, 's'},
 	{"set-control", 1, 0, 'w'},
 	{"skip", 1, 0, OPT_SKIP_FRAMES},
@@ -1061,6 +1064,7 @@ static struct option opts[] = {
 
 int main(int argc, char *argv[])
 {
+	struct sched_param sched;
 	struct device dev;
 	int ret;
 
@@ -1071,6 +1075,7 @@ int main(int argc, char *argv[])
 	int do_enum_inputs = 0, do_set_input = 0;
 	int do_list_controls = 0, do_get_control = 0, do_set_control = 0;
 	int do_sleep_forever = 0, do_requeue_last = 0;
+	int do_rt = 0;
 	int no_query = 0;
 	char *endptr;
 	int c;
@@ -1095,8 +1100,10 @@ int main(int argc, char *argv[])
 	unsigned int delay = 0, nframes = (unsigned int)-1;
 	const char *filename = "frame";
 
+	unsigned int rt_priority = 1;
+
 	opterr = 0;
-	while ((c = getopt_long(argc, argv, "c::d:f:F::hi:ln:pq:r:s:t:uw:", opts, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "c::d:f:F::hi:ln:pq:r:R::s:t:uw:", opts, NULL)) != -1) {
 
 		switch (c) {
 		case 'c':
@@ -1148,6 +1155,11 @@ int main(int argc, char *argv[])
 				return 1;
 			}
 			do_get_control = 1;
+			break;
+		case 'R':
+			do_rt = 1;
+			if (optarg)
+				rt_priority = atoi(optarg);
 			break;
 		case 's':
 			do_set_format = 1;
@@ -1306,6 +1318,14 @@ int main(int argc, char *argv[])
 	if (do_pause) {
 		printf("Press enter to start capture\n");
 		getchar();
+	}
+
+	if (do_rt) {
+		memset(&sched, 0, sizeof sched);
+		sched.sched_priority = rt_priority;
+		ret = sched_setscheduler(0, SCHED_RR, &sched);
+		if (ret < 0)
+			printf("Failed to select RR scheduler (%d)\n", errno);
 	}
 
 	if (video_do_capture(&dev, nframes, skip, delay, filename, do_requeue_last) < 0) {
