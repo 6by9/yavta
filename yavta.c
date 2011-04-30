@@ -439,20 +439,19 @@ static int video_enable(struct device *dev, int enable)
 	return 0;
 }
 
-static void video_query_menu(struct device *dev, unsigned int id)
+static void video_query_menu(struct device *dev, unsigned int id,
+			     unsigned int min, unsigned int max)
 {
 	struct v4l2_querymenu menu;
 	int ret;
 
-	menu.index = 0;
-	while (1) {
+	for (menu.index = min; menu.index <= max; menu.index++) {
 		menu.id = id;
 		ret = ioctl(dev->fd, VIDIOC_QUERYMENU, &menu);
 		if (ret < 0)
-			break;
+			continue;
 
 		printf("  %u: %.32s\n", menu.index, menu.name);
-		menu.index++;
 	};
 }
 
@@ -493,7 +492,7 @@ static void video_list_controls(struct device *dev)
 			query.step, query.default_value, value);
 
 		if (query.type == V4L2_CTRL_TYPE_MENU)
-			video_query_menu(dev, query.id);
+			video_query_menu(dev, query.id, query.minimum, query.maximum);
 
 		nctrls++;
 	}
