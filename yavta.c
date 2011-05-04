@@ -488,7 +488,12 @@ static void video_list_controls(struct device *dev)
 		else
 			sprintf(value, "%d", ctrl.value);
 
-		printf("control 0x%08x %s min %d max %d step %d default %d current %s.\n",
+		if (query.type == V4L2_CTRL_TYPE_CTRL_CLASS) {
+			printf("--- %s (class 0x%08x) ---\n", query.name, query.id);
+			continue;
+		}
+
+		printf("control 0x%08x `%s' min %d max %d step %d default %d current %s.\n",
 			query.id, query.name, query.minimum, query.maximum,
 			query.step, query.default_value, value);
 
