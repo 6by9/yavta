@@ -109,6 +109,7 @@ static int video_open(struct device *dev, const char *devname, int no_query)
 	dev->fd = -1;
 	dev->memtype = V4L2_MEMORY_MMAP;
 	dev->buffers = NULL;
+	dev->type = (enum v4l2_buf_type)-1;
 
 	dev->fd = open(devname, O_RDWR);
 	if (dev->fd < 0) {
@@ -116,33 +117,33 @@ static int video_open(struct device *dev, const char *devname, int no_query)
 		return dev->fd;
 	}
 
-	if (!no_query) {
-		memset(&cap, 0, sizeof cap);
-		ret = ioctl(dev->fd, VIDIOC_QUERYCAP, &cap);
-		if (ret < 0) {
-			printf("Error opening device %s: unable to query "
-				"device.\n", devname);
-			close(dev->fd);
-			return ret;
-		}
+	printf("Device %s opened.\n", devname);
 
-		if (cap.capabilities & V4L2_CAP_VIDEO_CAPTURE)
-			dev->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-		else if (cap.capabilities & V4L2_CAP_VIDEO_OUTPUT)
-			dev->type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
-		else {
-			printf("Error opening device %s: neither video capture "
-				"nor video output supported.\n", devname);
-			close(dev->fd);
-			return -EINVAL;
-		}
-
-		printf("Device %s opened: %s (%s).\n", devname, cap.card, cap.bus_info);
-	} else {
+	if (no_query) {
+		/* Assume capture device. */
 		dev->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-		printf("Device %s opened.\n", devname);
+		return 0;
 	}
 
+	memset(&cap, 0, sizeof cap);
+	ret = ioctl(dev->fd, VIDIOC_QUERYCAP, &cap);
+	if (ret < 0)
+		return 0;
+
+	if (cap.capabilities & V4L2_CAP_VIDEO_CAPTURE)
+		dev->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+	else if (cap.capabilities & V4L2_CAP_VIDEO_OUTPUT)
+		dev->type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
+	else {
+		printf("Error opening device %s: neither video capture "
+			"nor video output supported.\n", devname);
+		close(dev->fd);
+		return -EINVAL;
+	}
+
+	printf("Device `%s' on `%s' is a video %s device.\n",
+		cap.card, cap.bus_info,
+		dev->type == V4L2_BUF_TYPE_VIDEO_CAPTURE ? "capture" : "output");
 	return 0;
 }
 
@@ -1184,10 +1185,15 @@ int main(int argc, char *argv[])
 	if (!do_file)
 		filename = NULL;
 
-	/* Open the video device. */
+	/* Open the video device. If the device type isn't recognized, set the
+	 * --no-query option to avoid querying V4L2 subdevs.
+	 */
 	ret = video_open(&dev, argv[optind], no_query);
 	if (ret < 0)
 		return 1;
+
+	if (dev.type == (enum v4l2_buf_type)-1)
+		no_query = 1;
 
 	dev.memtype = memtype;
 
