@@ -86,10 +86,56 @@ static const char *v4l2_buf_type_name(enum v4l2_buf_type type)
 		return "Unknown";
 }
 
-static const char *v4l2_fourcc_name(unsigned int fourcc)
+#ifndef V4L2_PIX_FMT_SGRBG8	/* 2.6.31 */
+#define V4L2_PIX_FMT_SGRBG8	v4l2_fourcc('G', 'R', 'B', 'G')
+#endif
+#ifndef V4L2_PIX_FMT_SRGGB8	/* 2.6.33 */
+#define V4L2_PIX_FMT_SRGGB8	v4l2_fourcc('R', 'G', 'G', 'B')
+#define V4L2_PIX_FMT_SBGGR10	v4l2_fourcc('B', 'G', '1', '0')
+#define V4L2_PIX_FMT_SGBRG10	v4l2_fourcc('G', 'B', '1', '0')
+#define V4L2_PIX_FMT_SRGGB10	v4l2_fourcc('R', 'G', '1', '0')
+#endif
+#ifndef V4L2_PIX_FMT_SBGGR12	/* 2.6.39 */
+#define V4L2_PIX_FMT_SBGGR12	v4l2_fourcc('B', 'G', '1', '2')
+#define V4L2_PIX_FMT_SGBRG12	v4l2_fourcc('G', 'B', '1', '2')
+#define V4L2_PIX_FMT_SGRBG12	v4l2_fourcc('B', 'A', '1', '2')
+#define V4L2_PIX_FMT_SRGGB12	v4l2_fourcc('R', 'G', '1', '2')
+#endif
+
+static struct {
+	const char *name;
+	unsigned int fourcc;
+} pixel_formats[] = {
+	{ "Y8", V4L2_PIX_FMT_GREY },
+	{ "Y16", V4L2_PIX_FMT_Y16 },
+	{ "YUYV", V4L2_PIX_FMT_YUYV },
+	{ "UYVY", V4L2_PIX_FMT_UYVY },
+	{ "SBGGR8", V4L2_PIX_FMT_SBGGR8 },
+	{ "SGBRG8", V4L2_PIX_FMT_SGBRG8 },
+	{ "SGRBG8", V4L2_PIX_FMT_SGRBG8 },
+	{ "SRGGB8", V4L2_PIX_FMT_SRGGB8 },
+	{ "SGRBG10_DPCM8", V4L2_PIX_FMT_SGRBG10DPCM8 },
+	{ "SBGGR10", V4L2_PIX_FMT_SBGGR10 },
+	{ "SGBRG10", V4L2_PIX_FMT_SGBRG10 },
+	{ "SGRBG10", V4L2_PIX_FMT_SGRBG10 },
+	{ "SRGGB10", V4L2_PIX_FMT_SRGGB10 },
+	{ "SBGGR12", V4L2_PIX_FMT_SBGGR12 },
+	{ "SGBRG12", V4L2_PIX_FMT_SGBRG12 },
+	{ "SGRBG12", V4L2_PIX_FMT_SGRBG12 },
+	{ "SRGGB12", V4L2_PIX_FMT_SRGGB12 },
+	{ "DV", V4L2_PIX_FMT_DV },
+	{ "MJPEG", V4L2_PIX_FMT_MJPEG },
+};
+
+static const char *v4l2_format_name(unsigned int fourcc)
 {
 	static char name[5];
 	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(pixel_formats); ++i) {
+		if (pixel_formats[i].fourcc == fourcc)
+			return pixel_formats[i].name;
+	}
 
 	for (i = 0; i < 4; ++i) {
 		name[i] = fourcc & 0xff;
@@ -98,6 +144,18 @@ static const char *v4l2_fourcc_name(unsigned int fourcc)
 
 	name[4] = '\0';
 	return name;
+}
+
+static unsigned int v4l2_format_code(const char *name)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(pixel_formats); ++i) {
+		if (strcasecmp(pixel_formats[i].name, name) == 0)
+			return pixel_formats[i].fourcc;
+	}
+
+	return 0;
 }
 
 static int video_open(struct device *dev, const char *devname, int no_query)
@@ -210,13 +268,9 @@ static int video_get_format(struct device *dev)
 	dev->bytesperline = fmt.fmt.pix.bytesperline;
 	dev->imagesize = fmt.fmt.pix.bytesperline ? fmt.fmt.pix.sizeimage : 0;
 
-	printf("Video format: %c%c%c%c (%08x) %ux%u\n",
-		(fmt.fmt.pix.pixelformat >> 0) & 0xff,
-		(fmt.fmt.pix.pixelformat >> 8) & 0xff,
-		(fmt.fmt.pix.pixelformat >> 16) & 0xff,
-		(fmt.fmt.pix.pixelformat >> 24) & 0xff,
-		fmt.fmt.pix.pixelformat,
-		fmt.fmt.pix.width, fmt.fmt.pix.height);
+	printf("Video format: %s (%08x) %ux%u buffer size %u\n",
+		v4l2_format_name(fmt.fmt.pix.pixelformat), fmt.fmt.pix.pixelformat,
+		fmt.fmt.pix.width, fmt.fmt.pix.height, fmt.fmt.pix.sizeimage);
 	return 0;
 }
 
@@ -239,7 +293,8 @@ static int video_set_format(struct device *dev, unsigned int w, unsigned int h, 
 		return ret;
 	}
 
-	printf("Video format set: width: %u height: %u buffer size: %u\n",
+	printf("Video format set: %s (%08x) %ux%u buffer size %u\n",
+		v4l2_format_name(fmt.fmt.pix.pixelformat), fmt.fmt.pix.pixelformat,
 		fmt.fmt.pix.width, fmt.fmt.pix.height, fmt.fmt.pix.sizeimage);
 	return 0;
 }
@@ -634,6 +689,7 @@ static void video_enum_frame_sizes(struct device *dev, __u32 pixelformat)
 		}
 	}
 }
+
 static void video_enum_formats(struct device *dev, enum v4l2_buf_type type)
 {
 	struct v4l2_fmtdesc fmt;
@@ -656,7 +712,7 @@ static void video_enum_formats(struct device *dev, enum v4l2_buf_type type)
 				"%u.\n", fmt.type);
 
 		printf("\tFormat %u: %s (%08x)\n", i,
-			v4l2_fourcc_name(fmt.pixelformat), fmt.pixelformat);
+			v4l2_format_name(fmt.pixelformat), fmt.pixelformat);
 		printf("\tType: %s (%u)\n", v4l2_buf_type_name(fmt.type),
 			fmt.type);
 		printf("\tName: %.32s\n", fmt.description);
@@ -1053,27 +1109,8 @@ int main(int argc, char *argv[])
 			break;
 		case 'f':
 			do_set_format = 1;
-			if (strcasecmp(optarg, "MJPEG") == 0)
-				pixelformat = V4L2_PIX_FMT_MJPEG;
-			else if (strcasecmp(optarg, "YUYV") == 0)
-				pixelformat = V4L2_PIX_FMT_YUYV;
-			else if (strcasecmp(optarg, "UYVY") == 0)
-				pixelformat = V4L2_PIX_FMT_UYVY;
-			else if (strcasecmp(optarg, "Y16") == 0)
-				pixelformat = V4L2_PIX_FMT_Y16;
-			else if (strcasecmp(optarg, "Y8") == 0)
-				pixelformat = V4L2_PIX_FMT_GREY;
-			else if (strcasecmp(optarg, "SGRBG10_DPMC8") == 0)
-				pixelformat = V4L2_PIX_FMT_SGRBG10DPCM8;
-			else if (strcasecmp(optarg, "SGRBG10") == 0)
-				pixelformat = V4L2_PIX_FMT_SGRBG10;
-#ifdef V4L2_PIX_FMT_SGRBG12
-			else if (strcasecmp(optarg, "SGRBG12") == 0)
-				pixelformat = V4L2_PIX_FMT_SGRBG12;
-#endif
-			else if (strcasecmp(optarg, "DV") == 0)
-				pixelformat = V4L2_PIX_FMT_DV;
-			else {
+			pixelformat = v4l2_format_code(optarg);
+			if (pixelformat == 0) {
 				printf("Unsupported video format '%s'\n", optarg);
 				return 1;
 			}
