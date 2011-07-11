@@ -425,14 +425,25 @@ static int video_free_buffers(struct device *dev)
 	if (dev->nbufs == 0)
 		return 0;
 
-	if (dev->memtype == V4L2_MEMORY_MMAP) {
-		for (i = 0; i < dev->nbufs; ++i) {
+	for (i = 0; i < dev->nbufs; ++i) {
+		switch (dev->memtype) {
+		case V4L2_MEMORY_MMAP:
 			ret = munmap(dev->buffers[i].mem, dev->buffers[i].size);
 			if (ret < 0) {
 				printf("Unable to unmap buffer %u (%d)\n", i, errno);
 				return ret;
 			}
+			break;
+
+		case V4L2_MEMORY_USERPTR:
+			free(dev->buffers[i].mem);
+			break;
+
+		default:
+			break;
 		}
+
+		dev->buffers[i].mem = NULL;
 	}
 
 	memset(&rb, 0, sizeof rb);
