@@ -115,6 +115,15 @@ static struct {
 	const char *name;
 	unsigned int fourcc;
 } pixel_formats[] = {
+	{ "RGB332", V4L2_PIX_FMT_RGB332 },
+	{ "RGB555", V4L2_PIX_FMT_RGB555 },
+	{ "RGB565", V4L2_PIX_FMT_RGB565 },
+	{ "RGB555X", V4L2_PIX_FMT_RGB555X },
+	{ "RGB565X", V4L2_PIX_FMT_RGB565X },
+	{ "BGR24", V4L2_PIX_FMT_BGR24 },
+	{ "RGB24", V4L2_PIX_FMT_RGB24 },
+	{ "BGR32", V4L2_PIX_FMT_BGR32 },
+	{ "RGB32", V4L2_PIX_FMT_RGB32 },
 	{ "Y8", V4L2_PIX_FMT_GREY },
 	{ "Y16", V4L2_PIX_FMT_Y16 },
 	{ "YUYV", V4L2_PIX_FMT_YUYV },
