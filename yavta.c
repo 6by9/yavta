@@ -980,7 +980,9 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 	}
 
 	/* Start streaming. */
-	video_enable(dev, 1);
+	ret = video_enable(dev, 1);
+	if (ret < 0)
+		goto done;
 
 	size = 0;
 	clock_gettime(CLOCK_MONOTONIC, &start);
