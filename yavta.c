@@ -144,6 +144,7 @@ static struct {
 	{ "SRGGB12", V4L2_PIX_FMT_SRGGB12 },
 	{ "DV", V4L2_PIX_FMT_DV },
 	{ "MJPEG", V4L2_PIX_FMT_MJPEG },
+	{ "MPEG", V4L2_PIX_FMT_MPEG },
 };
 
 static const char *v4l2_format_name(unsigned int fourcc)
@@ -190,7 +191,8 @@ static int video_open(struct device *dev, const char *devname, int no_query)
 
 	dev->fd = open(devname, O_RDWR);
 	if (dev->fd < 0) {
-		printf("Error opening device %s: %d.\n", devname, errno);
+		printf("Error opening device %s: %s (%d).\n", devname,
+		       strerror(errno), errno);
 		return dev->fd;
 	}
 
@@ -328,7 +330,8 @@ static int video_set_framerate(struct device *dev, struct v4l2_fract *time_per_f
 
 	ret = ioctl(dev->fd, VIDIOC_G_PARM, &parm);
 	if (ret < 0) {
-		printf("Unable to get frame rate: %d.\n", errno);
+		printf("Unable to get frame rate: %s (%d).\n",
+			strerror(errno), errno);
 		return ret;
 	}
 
@@ -345,13 +348,15 @@ static int video_set_framerate(struct device *dev, struct v4l2_fract *time_per_f
 
 	ret = ioctl(dev->fd, VIDIOC_S_PARM, &parm);
 	if (ret < 0) {
-		printf("Unable to set frame rate: %d.\n", errno);
+		printf("Unable to set frame rate: %s (%d).\n", strerror(errno),
+			errno);
 		return ret;
 	}
 
 	ret = ioctl(dev->fd, VIDIOC_G_PARM, &parm);
 	if (ret < 0) {
-		printf("Unable to get frame rate: %d.\n", errno);
+		printf("Unable to get frame rate: %s (%d).\n", strerror(errno),
+			errno);
 		return ret;
 	}
 
@@ -378,7 +383,8 @@ static int video_alloc_buffers(struct device *dev, int nbufs,
 
 	ret = ioctl(dev->fd, VIDIOC_REQBUFS, &rb);
 	if (ret < 0) {
-		printf("Unable to request buffers: %d.\n", errno);
+		printf("Unable to request buffers: %s (%d).\n", strerror(errno),
+			errno);
 		return ret;
 	}
 
@@ -398,7 +404,8 @@ static int video_alloc_buffers(struct device *dev, int nbufs,
 		buf.memory = dev->memtype;
 		ret = ioctl(dev->fd, VIDIOC_QUERYBUF, &buf);
 		if (ret < 0) {
-			printf("Unable to query buffer %u (%d).\n", i, errno);
+			printf("Unable to query buffer %u: %s (%d).\n", i,
+				strerror(errno), errno);
 			return ret;
 		}
 		printf("length: %u offset: %u\n", buf.length, buf.m.offset);
@@ -407,7 +414,8 @@ static int video_alloc_buffers(struct device *dev, int nbufs,
 		case V4L2_MEMORY_MMAP:
 			buffers[i].mem = mmap(0, buf.length, PROT_READ | PROT_WRITE, MAP_SHARED, dev->fd, buf.m.offset);
 			if (buffers[i].mem == MAP_FAILED) {
-				printf("Unable to map buffer %u (%d)\n", i, errno);
+				printf("Unable to map buffer %u: %s (%d)\n", i,
+					strerror(errno), errno);
 				return ret;
 			}
 			buffers[i].size = buf.length;
@@ -451,7 +459,8 @@ static int video_free_buffers(struct device *dev)
 		case V4L2_MEMORY_MMAP:
 			ret = munmap(dev->buffers[i].mem, dev->buffers[i].size);
 			if (ret < 0) {
-				printf("Unable to unmap buffer %u (%d)\n", i, errno);
+				printf("Unable to unmap buffer %u: %s (%d)\n", i,
+					strerror(errno), errno);
 				return ret;
 			}
 			break;
@@ -474,7 +483,8 @@ static int video_free_buffers(struct device *dev)
 
 	ret = ioctl(dev->fd, VIDIOC_REQBUFS, &rb);
 	if (ret < 0) {
-		printf("Unable to release buffers: %d.\n", errno);
+		printf("Unable to release buffers: %s (%d).\n",
+			strerror(errno), errno);
 		return ret;
 	}
 
@@ -513,7 +523,8 @@ static int video_queue_buffer(struct device *dev, int index, enum buffer_fill_mo
 
 	ret = ioctl(dev->fd, VIDIOC_QBUF, &buf);
 	if (ret < 0)
-		printf("Unable to queue buffer (%d).\n", errno);
+		printf("Unable to queue buffer: %s (%d).\n",
+			strerror(errno), errno);
 
 	return ret;
 }
@@ -525,8 +536,8 @@ static int video_enable(struct device *dev, int enable)
 
 	ret = ioctl(dev->fd, enable ? VIDIOC_STREAMON : VIDIOC_STREAMOFF, &type);
 	if (ret < 0) {
-		printf("Unable to %s streaming: %d.\n", enable ? "start" : "stop",
-			errno);
+		printf("Unable to %s streaming: %s (%d).\n",
+			enable ? "start" : "stop", strerror(errno), errno);
 		return ret;
 	}
 
@@ -789,7 +800,8 @@ static int video_get_input(struct device *dev)
 
 	ret = ioctl(dev->fd, VIDIOC_G_INPUT, &input);
 	if (ret < 0) {
-		printf("Unable to get current input: %s.\n", strerror(errno));
+		printf("Unable to get current input: %s (%d).\n",
+			strerror(errno), errno);
 		return ret;
 	}
 
@@ -803,8 +815,8 @@ static int video_set_input(struct device *dev, unsigned int input)
 
 	ret = ioctl(dev->fd, VIDIOC_S_INPUT, &_input);
 	if (ret < 0)
-		printf("Unable to select input %u: %s.\n", input,
-			strerror(errno));
+		printf("Unable to select input %u: %s (%d).\n", input,
+			strerror(errno), errno);
 
 	return ret;
 }
@@ -822,8 +834,8 @@ static int video_set_quality(struct device *dev, unsigned int quality)
 
 	ret = ioctl(dev->fd, VIDIOC_S_JPEGCOMP, &jpeg);
 	if (ret < 0) {
-		printf("Unable to set quality to %u: %s.\n", quality,
-			strerror(errno));
+		printf("Unable to set quality to %u: %s (%d).\n", quality,
+			strerror(errno), errno);
 		return ret;
 	}
 
@@ -866,8 +878,8 @@ static int video_load_test_pattern(struct device *dev, const char *filename)
 
 	fd = open(filename, O_RDONLY);
 	if (fd == -1) {
-		printf("Unable to open test pattern file '%s': %s.\n", filename,
-			strerror(errno));
+		printf("Unable to open test pattern file '%s': %s (%d).\n",
+			filename, strerror(errno), errno);
 		return -errno;
 	}
 
@@ -983,7 +995,8 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 		ret = ioctl(dev->fd, VIDIOC_DQBUF, &buf);
 		if (ret < 0) {
 			if (errno != EIO) {
-				printf("Unable to dequeue buffer (%d).\n", errno);
+				printf("Unable to dequeue buffer: %s (%d).\n",
+					strerror(errno), errno);
 				goto done;
 			}
 			buf.type = dev->type;
@@ -1037,7 +1050,8 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 
 		ret = video_queue_buffer(dev, buf.index, fill);
 		if (ret < 0) {
-			printf("Unable to requeue buffer (%d).\n", errno);
+			printf("Unable to requeue buffer: %s (%d).\n",
+				strerror(errno), errno);
 			goto done;
 		}
 	}
@@ -1417,7 +1431,8 @@ int main(int argc, char *argv[])
 		sched.sched_priority = rt_priority;
 		ret = sched_setscheduler(0, SCHED_RR, &sched);
 		if (ret < 0)
-			printf("Failed to select RR scheduler (%d)\n", errno);
+			printf("Failed to select RR scheduler: %s (%d)\n",
+				strerror(errno), errno);
 	}
 
 	if (video_do_capture(&dev, nframes, skip, delay, filename,
