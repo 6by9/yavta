@@ -26,6 +26,7 @@
 #include <errno.h>
 #include <getopt.h>
 #include <sched.h>
+#include <time.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/select.h>
@@ -949,9 +950,9 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 	int do_requeue_last, enum buffer_fill_mode fill)
 {
 	char *filename = NULL;
-	struct timeval start;
+	struct timespec start;
 	struct timeval last;
-	struct timeval ts;
+	struct timespec ts;
 	struct v4l2_buffer buf;
 	unsigned int size;
 	unsigned int i;
@@ -970,8 +971,9 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 	video_enable(dev, 1);
 
 	size = 0;
-	gettimeofday(&start, NULL);
-	last = start;
+	clock_gettime(CLOCK_MONOTONIC, &start);
+	last.tv_sec = start.tv_sec;
+	last.tv_usec = start.tv_nsec / 1000;
 
 	for (i = 0; i < nframes; ++i) {
 		/* Dequeue a buffer. */
@@ -1004,11 +1006,11 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 		    + buf.timestamp.tv_usec - last.tv_usec;
 		fps = fps ? 1000000.0 / fps : 0.0;
 
-		gettimeofday(&ts, NULL);
+		clock_gettime(CLOCK_MONOTONIC, &ts);
 		printf("%u (%u) [%c] %u %u bytes %ld.%06ld %ld.%06ld %.3f fps\n", i, buf.index,
 			(buf.flags & V4L2_BUF_FLAG_ERROR) ? 'E' : '-',
 			buf.sequence, buf.bytesused, buf.timestamp.tv_sec,
-			buf.timestamp.tv_usec, ts.tv_sec, ts.tv_usec, fps);
+			buf.timestamp.tv_usec, ts.tv_sec, ts.tv_nsec/1000, fps);
 
 		last = buf.timestamp;
 
@@ -1048,21 +1050,21 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 		goto done;
 	}
 
-	if (ts.tv_sec == start.tv_sec && ts.tv_usec == start.tv_usec)
+	if (ts.tv_sec == start.tv_sec && ts.tv_nsec == start.tv_nsec)
 		goto done;
 
 	ts.tv_sec -= start.tv_sec;
-	ts.tv_usec -= start.tv_usec;
-	if (ts.tv_usec < 0) {
+	ts.tv_nsec -= start.tv_nsec;
+	if (ts.tv_nsec < 0) {
 		ts.tv_sec--;
-		ts.tv_usec += 1000000;
+		ts.tv_nsec += 1000000000;
 	}
 
-	bps = size/(ts.tv_usec+1000000.0*ts.tv_sec)*1000000.0;
-	fps = i/(ts.tv_usec+1000000.0*ts.tv_sec)*1000000.0;
+	bps = size/(ts.tv_nsec/1000.0+1000000.0*ts.tv_sec)*1000000.0;
+	fps = i/(ts.tv_nsec/1000.0+1000000.0*ts.tv_sec)*1000000.0;
 
 	printf("Captured %u frames in %lu.%06lu seconds (%f fps, %f B/s).\n",
-		i, ts.tv_sec, ts.tv_usec, fps, bps);
+		i, ts.tv_sec, ts.tv_nsec/1000, fps, bps);
 
 done:
 	free(filename);
