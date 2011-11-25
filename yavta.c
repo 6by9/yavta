@@ -21,6 +21,7 @@
 #include <string.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -957,27 +958,54 @@ static void video_verify_buffer(struct device *dev, int index)
 	}
 }
 
+static void video_save_image(struct device *dev, struct v4l2_buffer *buf,
+			     const char *pattern, unsigned int sequence)
+{
+	unsigned int size;
+	char *filename;
+	const char *p;
+	bool append;
+	int ret;
+	int fd;
+
+	size = strlen(pattern);
+	filename = malloc(size + 12);
+	if (filename == NULL)
+		return;
+
+	p = strchr(pattern, '#');
+	if (p != NULL) {
+		sprintf(filename, "%.*s%06u%s", (int)(p - pattern), pattern,
+			sequence, p + 1);
+		append = false;
+	} else {
+		strcpy(filename, pattern);
+		append = true;
+	}
+
+	fd = open(filename, O_CREAT | O_WRONLY | (append ? O_APPEND : 0),
+		  S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
+	free(filename);
+	if (fd == -1)
+		return;
+
+	ret = write(fd, dev->buffers[buf->index].mem, buf->bytesused);
+	close(fd);
+}
+
 static int video_do_capture(struct device *dev, unsigned int nframes,
-	unsigned int skip, unsigned int delay, const char *filename_prefix,
+	unsigned int skip, unsigned int delay, const char *pattern,
 	int do_requeue_last, enum buffer_fill_mode fill)
 {
-	char *filename = NULL;
 	struct timespec start;
 	struct timeval last;
 	struct timespec ts;
 	struct v4l2_buffer buf;
 	unsigned int size;
 	unsigned int i;
-	FILE *file;
 	double bps;
 	double fps;
 	int ret;
-
-	if (filename_prefix != NULL) {
-		filename = malloc(strlen(filename_prefix) + 12);
-		if (filename == NULL)
-			return -ENOMEM;
-	}
 
 	/* Start streaming. */
 	ret = video_enable(dev, 1);
@@ -1030,14 +1058,9 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 		last = buf.timestamp;
 
 		/* Save the image. */
-		if (dev->type == V4L2_BUF_TYPE_VIDEO_CAPTURE && filename_prefix && !skip) {
-			sprintf(filename, "%s-%06u.bin", filename_prefix, i);
-			file = fopen(filename, "wb");
-			if (file != NULL) {
-				ret = fwrite(dev->buffers[buf.index].mem, buf.bytesused, 1, file);
-				fclose(file);
-			}
-		}
+		if (dev->type == V4L2_BUF_TYPE_VIDEO_CAPTURE && pattern && !skip)
+			video_save_image(dev, &buf, pattern, i);
+
 		if (skip)
 			--skip;
 
@@ -1083,7 +1106,6 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 		i, ts.tv_sec, ts.tv_nsec/1000, fps, bps);
 
 done:
-	free(filename);
 	return video_free_buffers(dev);
 }
 
@@ -1098,7 +1120,10 @@ static void usage(const char *argv0)
 	printf("-C, --check-overrun		Verify dequeued frames for buffer overrun\n");
 	printf("-d, --delay			Delay (in ms) before requeuing buffers\n");
 	printf("-f, --format format		Set the video format\n");
-	printf("-F, --file[=prefix]		Read/write frames from/to disk\n");
+	printf("-F, --file[=name]		Read/write frames from/to disk\n");
+	printf("\tFor video capture devices, the first '#' character in the file name is\n");
+	printf("\texpanded to the frame sequence number. The default file name is\n");
+	printf("\t'frame-#.bin'.\n");
 	printf("-h, --help			Show this help screen\n");
 	printf("-i, --input input		Select the video input\n");
 	printf("-I, --fill-frames		Fill frames with check pattern before queuing them\n");
@@ -1195,7 +1220,7 @@ int main(int argc, char *argv[])
 	/* Capture loop */
 	enum buffer_fill_mode fill_mode = BUFFER_FILL_NONE;
 	unsigned int delay = 0, nframes = (unsigned int)-1;
-	const char *filename = "frame";
+	const char *filename = "frame-#.bin";
 
 	unsigned int rt_priority = 1;
 
