@@ -106,12 +106,14 @@ static const char *v4l2_buf_type_name(enum v4l2_buf_type type)
 #define V4L2_PIX_FMT_SBGGR10	v4l2_fourcc('B', 'G', '1', '0')
 #define V4L2_PIX_FMT_SGBRG10	v4l2_fourcc('G', 'B', '1', '0')
 #define V4L2_PIX_FMT_SRGGB10	v4l2_fourcc('R', 'G', '1', '0')
+#define V4L2_PIX_FMT_Y10	v4l2_fourcc('Y', '1', '0', ' ')
 #endif
 #ifndef V4L2_PIX_FMT_SBGGR12	/* 2.6.39 */
 #define V4L2_PIX_FMT_SBGGR12	v4l2_fourcc('B', 'G', '1', '2')
 #define V4L2_PIX_FMT_SGBRG12	v4l2_fourcc('G', 'B', '1', '2')
 #define V4L2_PIX_FMT_SGRBG12	v4l2_fourcc('B', 'A', '1', '2')
 #define V4L2_PIX_FMT_SRGGB12	v4l2_fourcc('R', 'G', '1', '2')
+#define V4L2_PIX_FMT_Y12	v4l2_fourcc('Y', '1', '2', ' ')
 #endif
 
 static struct {
@@ -128,6 +130,8 @@ static struct {
 	{ "BGR32", V4L2_PIX_FMT_BGR32 },
 	{ "RGB32", V4L2_PIX_FMT_RGB32 },
 	{ "Y8", V4L2_PIX_FMT_GREY },
+	{ "Y10", V4L2_PIX_FMT_Y10 },
+	{ "Y12", V4L2_PIX_FMT_Y12 },
 	{ "Y16", V4L2_PIX_FMT_Y16 },
 	{ "YUYV", V4L2_PIX_FMT_YUYV },
 	{ "UYVY", V4L2_PIX_FMT_UYVY },
