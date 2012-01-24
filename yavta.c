@@ -115,6 +115,10 @@ static const char *v4l2_buf_type_name(enum v4l2_buf_type type)
 #define V4L2_PIX_FMT_SRGGB12	v4l2_fourcc('R', 'G', '1', '2')
 #define V4L2_PIX_FMT_Y12	v4l2_fourcc('Y', '1', '2', ' ')
 #endif
+#ifndef V4L2_PIX_FMT_NV24	/* 3.3 */
+#define V4L2_PIX_FMT_NV24	v4l2_fourcc('N', 'V', '2', '4')
+#define V4L2_PIX_FMT_NV42	v4l2_fourcc('N', 'V', '4', '2')
+#endif
 
 static struct {
 	const char *name;
@@ -135,6 +139,12 @@ static struct {
 	{ "Y16", V4L2_PIX_FMT_Y16 },
 	{ "YUYV", V4L2_PIX_FMT_YUYV },
 	{ "UYVY", V4L2_PIX_FMT_UYVY },
+	{ "NV12", V4L2_PIX_FMT_NV12 },
+	{ "NV21", V4L2_PIX_FMT_NV21 },
+	{ "NV16", V4L2_PIX_FMT_NV16 },
+	{ "NV61", V4L2_PIX_FMT_NV61 },
+	{ "NV24", V4L2_PIX_FMT_NV24 },
+	{ "NV42", V4L2_PIX_FMT_NV42 },
 	{ "SBGGR8", V4L2_PIX_FMT_SBGGR8 },
 	{ "SGBRG8", V4L2_PIX_FMT_SGBRG8 },
 	{ "SGRBG8", V4L2_PIX_FMT_SGRBG8 },
