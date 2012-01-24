@@ -1006,6 +1006,12 @@ static void video_save_image(struct device *dev, struct v4l2_buffer *buf,
 
 	ret = write(fd, dev->buffers[buf->index].mem, buf->bytesused);
 	close(fd);
+
+	if (ret < 0)
+		printf("write error: %s (%d)\n", strerror(errno), errno);
+	else if (ret != (int)buf->bytesused)
+		printf("write error: only %d bytes written instead of %u\n",
+		       ret, buf->bytesused);
 }
 
 static int video_do_capture(struct device *dev, unsigned int nframes,
