@@ -305,13 +305,15 @@ static int video_get_format(struct device *dev)
 	dev->bytesperline = fmt.fmt.pix.bytesperline;
 	dev->imagesize = fmt.fmt.pix.bytesperline ? fmt.fmt.pix.sizeimage : 0;
 
-	printf("Video format: %s (%08x) %ux%u buffer size %u\n",
+	printf("Video format: %s (%08x) %ux%u (stride %u) buffer size %u\n",
 		v4l2_format_name(fmt.fmt.pix.pixelformat), fmt.fmt.pix.pixelformat,
-		fmt.fmt.pix.width, fmt.fmt.pix.height, fmt.fmt.pix.sizeimage);
+		fmt.fmt.pix.width, fmt.fmt.pix.height, fmt.fmt.pix.bytesperline,
+		fmt.fmt.pix.sizeimage);
 	return 0;
 }
 
-static int video_set_format(struct device *dev, unsigned int w, unsigned int h, unsigned int format)
+static int video_set_format(struct device *dev, unsigned int w, unsigned int h,
+			    unsigned int format, unsigned int stride)
 {
 	struct v4l2_format fmt;
 	int ret;
@@ -321,6 +323,7 @@ static int video_set_format(struct device *dev, unsigned int w, unsigned int h, 
 	fmt.fmt.pix.width = w;
 	fmt.fmt.pix.height = h;
 	fmt.fmt.pix.pixelformat = format;
+	fmt.fmt.pix.bytesperline = stride;
 	fmt.fmt.pix.field = V4L2_FIELD_ANY;
 
 	ret = ioctl(dev->fd, VIDIOC_S_FMT, &fmt);
@@ -330,9 +333,10 @@ static int video_set_format(struct device *dev, unsigned int w, unsigned int h, 
 		return ret;
 	}
 
-	printf("Video format set: %s (%08x) %ux%u buffer size %u\n",
+	printf("Video format set: %s (%08x) %ux%u (stride %u) buffer size %u\n",
 		v4l2_format_name(fmt.fmt.pix.pixelformat), fmt.fmt.pix.pixelformat,
-		fmt.fmt.pix.width, fmt.fmt.pix.height, fmt.fmt.pix.sizeimage);
+		fmt.fmt.pix.width, fmt.fmt.pix.height, fmt.fmt.pix.bytesperline,
+		fmt.fmt.pix.sizeimage);
 	return 0;
 }
 
@@ -1165,6 +1169,7 @@ static void usage(const char *argv0)
 	printf("    --requeue-last		Requeue the last buffers before streamoff\n");
 	printf("    --skip n			Skip the first n frames\n");
 	printf("    --sleep-forever		Sleep forever after configuring the device\n");
+	printf("    --stride value		Line stride in bytes\n");
 }
 
 #define OPT_ENUM_FORMATS	256
@@ -1174,6 +1179,7 @@ static void usage(const char *argv0)
 #define OPT_SLEEP_FOREVER	260
 #define OPT_USERPTR_OFFSET	261
 #define OPT_REQUEUE_LAST	262
+#define OPT_STRIDE		263
 
 static struct option opts[] = {
 	{"capture", 2, 0, 'c'},
@@ -1199,6 +1205,7 @@ static struct option opts[] = {
 	{"set-control", 1, 0, 'w'},
 	{"skip", 1, 0, OPT_SKIP_FRAMES},
 	{"sleep-forever", 0, 0, OPT_SLEEP_FOREVER},
+	{"stride", 1, 0, OPT_STRIDE},
 	{"time-per-frame", 1, 0, 't'},
 	{"userptr", 0, 0, 'u'},
 	{0, 0, 0, 0}
@@ -1231,6 +1238,7 @@ int main(int argc, char *argv[])
 	unsigned int pixelformat = V4L2_PIX_FMT_YUYV;
 	unsigned int width = 640;
 	unsigned int height = 480;
+	unsigned int stride = 0;
 	unsigned int nbufs = V4L_BUFFERS_DEFAULT;
 	unsigned int input = 0;
 	unsigned int skip = 0;
@@ -1370,6 +1378,9 @@ int main(int argc, char *argv[])
 		case OPT_SLEEP_FOREVER:
 			do_sleep_forever = 1;
 			break;
+		case OPT_STRIDE:
+			stride = atoi(optarg);
+			break;
 		case OPT_USERPTR_OFFSET:
 			userptr_offset = atoi(optarg);
 			break;
@@ -1433,7 +1444,7 @@ int main(int argc, char *argv[])
 
 	/* Set the video format. */
 	if (do_set_format) {
-		if (video_set_format(&dev, width, height, pixelformat) < 0) {
+		if (video_set_format(&dev, width, height, pixelformat, stride) < 0) {
 			video_close(&dev);
 			return 1;
 		}
