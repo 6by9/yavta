@@ -34,7 +34,7 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 
-#include <linux/videodev2.h>
+#include "videodev2.h"
 
 #ifndef V4L2_BUF_FLAG_ERROR
 #define V4L2_BUF_FLAG_ERROR	0x0040
@@ -97,28 +97,6 @@ static const char *v4l2_buf_type_name(enum v4l2_buf_type type)
 	else
 		return "Unknown";
 }
-
-#ifndef V4L2_PIX_FMT_SGRBG8	/* 2.6.31 */
-#define V4L2_PIX_FMT_SGRBG8	v4l2_fourcc('G', 'R', 'B', 'G')
-#endif
-#ifndef V4L2_PIX_FMT_SRGGB8	/* 2.6.33 */
-#define V4L2_PIX_FMT_SRGGB8	v4l2_fourcc('R', 'G', 'G', 'B')
-#define V4L2_PIX_FMT_SBGGR10	v4l2_fourcc('B', 'G', '1', '0')
-#define V4L2_PIX_FMT_SGBRG10	v4l2_fourcc('G', 'B', '1', '0')
-#define V4L2_PIX_FMT_SRGGB10	v4l2_fourcc('R', 'G', '1', '0')
-#define V4L2_PIX_FMT_Y10	v4l2_fourcc('Y', '1', '0', ' ')
-#endif
-#ifndef V4L2_PIX_FMT_SBGGR12	/* 2.6.39 */
-#define V4L2_PIX_FMT_SBGGR12	v4l2_fourcc('B', 'G', '1', '2')
-#define V4L2_PIX_FMT_SGBRG12	v4l2_fourcc('G', 'B', '1', '2')
-#define V4L2_PIX_FMT_SGRBG12	v4l2_fourcc('B', 'A', '1', '2')
-#define V4L2_PIX_FMT_SRGGB12	v4l2_fourcc('R', 'G', '1', '2')
-#define V4L2_PIX_FMT_Y12	v4l2_fourcc('Y', '1', '2', ' ')
-#endif
-#ifndef V4L2_PIX_FMT_NV24	/* 3.3 */
-#define V4L2_PIX_FMT_NV24	v4l2_fourcc('N', 'V', '2', '4')
-#define V4L2_PIX_FMT_NV42	v4l2_fourcc('N', 'V', '4', '2')
-#endif
 
 static struct {
 	const char *name;
