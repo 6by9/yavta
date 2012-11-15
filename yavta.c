@@ -37,7 +37,7 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 
-#include "videodev2.h"
+#include <linux/videodev2.h>
 
 #ifndef V4L2_BUF_FLAG_ERROR
 #define V4L2_BUF_FLAG_ERROR	0x0040
