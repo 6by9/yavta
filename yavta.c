@@ -464,6 +464,7 @@ static int video_alloc_buffers(struct device *dev, int nbufs,
 
 	/* Map the buffers. */
 	for (i = 0; i < rb.count; ++i) {
+		const char *ts_type;
 		memset(&buf, 0, sizeof buf);
 		buf.index = i;
 		buf.type = dev->type;
@@ -474,7 +475,18 @@ static int video_alloc_buffers(struct device *dev, int nbufs,
 				strerror(errno), errno);
 			return ret;
 		}
-		printf("length: %u offset: %u\n", buf.length, buf.m.offset);
+		switch (buf.flags & V4L2_BUF_FLAG_TIMESTAMP_MASK) {
+		case V4L2_BUF_FLAG_TIMESTAMP_UNKNOWN:
+			ts_type = "unknown";
+			break;
+		case V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC:
+			ts_type = "monotonic";
+			break;
+		default:
+			ts_type = "invalid";
+		}
+		printf("length: %u offset: %u timestamp type: %s\n",
+		       buf.length, buf.m.offset, ts_type);
 
 		switch (dev->memtype) {
 		case V4L2_MEMORY_MMAP:
