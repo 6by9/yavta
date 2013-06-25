@@ -1065,7 +1065,7 @@ static void video_save_image(struct device *dev, struct v4l2_buffer *buf,
 		append = true;
 	}
 
-	fd = open(filename, O_CREAT | O_WRONLY | (append ? O_APPEND : 0),
+	fd = open(filename, O_CREAT | O_WRONLY | (append ? O_APPEND : O_TRUNC),
 		  S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
 	free(filename);
 	if (fd == -1)
