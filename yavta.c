@@ -54,9 +54,10 @@ enum buffer_fill_mode
 
 struct buffer
 {
-	unsigned int padding;
-	unsigned int size;
-	void *mem;
+	unsigned int idx;
+	unsigned int padding[VIDEO_MAX_PLANES];
+	unsigned int size[VIDEO_MAX_PLANES];
+	void *mem[VIDEO_MAX_PLANES];
 };
 
 struct device
@@ -104,49 +105,50 @@ static const char *v4l2_buf_type_name(enum v4l2_buf_type type)
 static struct {
 	const char *name;
 	unsigned int fourcc;
+	unsigned char n_planes;
 } pixel_formats[] = {
-	{ "RGB332", V4L2_PIX_FMT_RGB332 },
-	{ "RGB555", V4L2_PIX_FMT_RGB555 },
-	{ "RGB565", V4L2_PIX_FMT_RGB565 },
-	{ "RGB555X", V4L2_PIX_FMT_RGB555X },
-	{ "RGB565X", V4L2_PIX_FMT_RGB565X },
-	{ "BGR24", V4L2_PIX_FMT_BGR24 },
-	{ "RGB24", V4L2_PIX_FMT_RGB24 },
-	{ "BGR32", V4L2_PIX_FMT_BGR32 },
-	{ "RGB32", V4L2_PIX_FMT_RGB32 },
-	{ "Y8", V4L2_PIX_FMT_GREY },
-	{ "Y10", V4L2_PIX_FMT_Y10 },
-	{ "Y12", V4L2_PIX_FMT_Y12 },
-	{ "Y16", V4L2_PIX_FMT_Y16 },
-	{ "UYVY", V4L2_PIX_FMT_UYVY },
-	{ "VYUY", V4L2_PIX_FMT_VYUY },
-	{ "YUYV", V4L2_PIX_FMT_YUYV },
-	{ "YVYU", V4L2_PIX_FMT_YVYU },
-	{ "NV12", V4L2_PIX_FMT_NV12 },
-	{ "NV21", V4L2_PIX_FMT_NV21 },
-	{ "NV16", V4L2_PIX_FMT_NV16 },
-	{ "NV61", V4L2_PIX_FMT_NV61 },
-	{ "NV24", V4L2_PIX_FMT_NV24 },
-	{ "NV42", V4L2_PIX_FMT_NV42 },
-	{ "SBGGR8", V4L2_PIX_FMT_SBGGR8 },
-	{ "SGBRG8", V4L2_PIX_FMT_SGBRG8 },
-	{ "SGRBG8", V4L2_PIX_FMT_SGRBG8 },
-	{ "SRGGB8", V4L2_PIX_FMT_SRGGB8 },
-	{ "SBGGR10_DPCM8", V4L2_PIX_FMT_SBGGR10DPCM8 },
-	{ "SGBRG10_DPCM8", V4L2_PIX_FMT_SGBRG10DPCM8 },
-	{ "SGRBG10_DPCM8", V4L2_PIX_FMT_SGRBG10DPCM8 },
-	{ "SRGGB10_DPCM8", V4L2_PIX_FMT_SRGGB10DPCM8 },
-	{ "SBGGR10", V4L2_PIX_FMT_SBGGR10 },
-	{ "SGBRG10", V4L2_PIX_FMT_SGBRG10 },
-	{ "SGRBG10", V4L2_PIX_FMT_SGRBG10 },
-	{ "SRGGB10", V4L2_PIX_FMT_SRGGB10 },
-	{ "SBGGR12", V4L2_PIX_FMT_SBGGR12 },
-	{ "SGBRG12", V4L2_PIX_FMT_SGBRG12 },
-	{ "SGRBG12", V4L2_PIX_FMT_SGRBG12 },
-	{ "SRGGB12", V4L2_PIX_FMT_SRGGB12 },
-	{ "DV", V4L2_PIX_FMT_DV },
-	{ "MJPEG", V4L2_PIX_FMT_MJPEG },
-	{ "MPEG", V4L2_PIX_FMT_MPEG },
+	{ "RGB332", V4L2_PIX_FMT_RGB332, 1 },
+	{ "RGB555", V4L2_PIX_FMT_RGB555, 1 },
+	{ "RGB565", V4L2_PIX_FMT_RGB565, 1 },
+	{ "RGB555X", V4L2_PIX_FMT_RGB555X, 1 },
+	{ "RGB565X", V4L2_PIX_FMT_RGB565X, 1 },
+	{ "BGR24", V4L2_PIX_FMT_BGR24, 1 },
+	{ "RGB24", V4L2_PIX_FMT_RGB24, 1 },
+	{ "BGR32", V4L2_PIX_FMT_BGR32, 1 },
+	{ "RGB32", V4L2_PIX_FMT_RGB32, 1 },
+	{ "Y8", V4L2_PIX_FMT_GREY, 1 },
+	{ "Y10", V4L2_PIX_FMT_Y10, 1 },
+	{ "Y12", V4L2_PIX_FMT_Y12, 1 },
+	{ "Y16", V4L2_PIX_FMT_Y16, 1 },
+	{ "UYVY", V4L2_PIX_FMT_UYVY, 1 },
+	{ "VYUY", V4L2_PIX_FMT_VYUY, 1 },
+	{ "YUYV", V4L2_PIX_FMT_YUYV, 1 },
+	{ "YVYU", V4L2_PIX_FMT_YVYU, 1 },
+	{ "NV12", V4L2_PIX_FMT_NV12, 1 },
+	{ "NV21", V4L2_PIX_FMT_NV21, 1 },
+	{ "NV16", V4L2_PIX_FMT_NV16, 1 },
+	{ "NV61", V4L2_PIX_FMT_NV61, 1 },
+	{ "NV24", V4L2_PIX_FMT_NV24, 1 },
+	{ "NV42", V4L2_PIX_FMT_NV42, 1 },
+	{ "SBGGR8", V4L2_PIX_FMT_SBGGR8, 1 },
+	{ "SGBRG8", V4L2_PIX_FMT_SGBRG8, 1 },
+	{ "SGRBG8", V4L2_PIX_FMT_SGRBG8, 1 },
+	{ "SRGGB8", V4L2_PIX_FMT_SRGGB8, 1 },
+	{ "SBGGR10_DPCM8", V4L2_PIX_FMT_SBGGR10DPCM8, 1 },
+	{ "SGBRG10_DPCM8", V4L2_PIX_FMT_SGBRG10DPCM8, 1 },
+	{ "SGRBG10_DPCM8", V4L2_PIX_FMT_SGRBG10DPCM8, 1 },
+	{ "SRGGB10_DPCM8", V4L2_PIX_FMT_SRGGB10DPCM8, 1 },
+	{ "SBGGR10", V4L2_PIX_FMT_SBGGR10, 1 },
+	{ "SGBRG10", V4L2_PIX_FMT_SGBRG10, 1 },
+	{ "SGRBG10", V4L2_PIX_FMT_SGRBG10, 1 },
+	{ "SRGGB10", V4L2_PIX_FMT_SRGGB10, 1 },
+	{ "SBGGR12", V4L2_PIX_FMT_SBGGR12, 1 },
+	{ "SGBRG12", V4L2_PIX_FMT_SGBRG12, 1 },
+	{ "SGRBG12", V4L2_PIX_FMT_SGRBG12, 1 },
+	{ "SRGGB12", V4L2_PIX_FMT_SRGGB12, 1 },
+	{ "DV", V4L2_PIX_FMT_DV, 1 },
+	{ "MJPEG", V4L2_PIX_FMT_MJPEG, 1 },
+	{ "MPEG", V4L2_PIX_FMT_MPEG, 1 },
 };
 
 static const char *v4l2_format_name(unsigned int fourcc)
@@ -444,12 +446,78 @@ static int video_set_framerate(struct device *dev, struct v4l2_fract *time_per_f
 	return 0;
 }
 
+static int video_buffer_mmap(struct device *dev, struct buffer *buffer,
+			     struct v4l2_buffer *v4l2buf)
+{
+	unsigned int length;
+	unsigned int offset;
+
+	length = v4l2buf->length;
+	offset = v4l2buf->m.offset;
+
+	buffer->mem[0] = mmap(0, length, PROT_READ | PROT_WRITE, MAP_SHARED,
+			      dev->fd, offset);
+	if (buffer->mem[0] == MAP_FAILED) {
+		printf("Unable to map buffer %u: %s (%d)\n", buffer->idx,
+			strerror(errno), errno);
+		return -1;
+	}
+
+	buffer->size[0] = length;
+	buffer->padding[0] = 0;
+
+	printf("Buffer %u mapped at address %p.\n", buffer->idx, buffer->mem[0]);
+
+	return 0;
+}
+
+static int video_buffer_munmap(struct buffer *buffer)
+{
+	int ret;
+
+	ret = munmap(buffer->mem[0], buffer->size[0]);
+	if (ret < 0) {
+		printf("Unable to unmap buffer %u: %s (%d)\n", buffer->idx,
+			strerror(errno), errno);
+	}
+
+	buffer->mem[0] = NULL;
+
+	return 0;
+}
+
+static int video_buffer_alloc_userptr(struct buffer *buffer,
+				      struct v4l2_buffer *v4l2buf,
+				      unsigned int offset, unsigned int padding)
+{
+	unsigned int length;
+	int ret;
+
+	int page_size = getpagesize();
+
+	length = v4l2buf->length;
+
+	ret = posix_memalign(&buffer->mem[0], page_size, length + offset + padding);
+	if (ret < 0) {
+		printf("Unable to allocate buffer %u (%d)\n", buffer->idx, ret);
+		return -ENOMEM;
+	}
+
+	buffer->mem[0] += offset;
+	buffer->size[0] = length;
+	buffer->padding[0] = padding;
+
+	printf("Buffer %u allocated at address %p.\n", buffer->idx, buffer->mem[0]);
+
+	return 0;
+
+}
+
 static int video_alloc_buffers(struct device *dev, int nbufs,
 	unsigned int offset, unsigned int padding)
 {
 	struct v4l2_requestbuffers rb;
 	struct v4l2_buffer buf;
-	int page_size;
 	struct buffer *buffers;
 	unsigned int i;
 	int ret;
@@ -471,8 +539,6 @@ static int video_alloc_buffers(struct device *dev, int nbufs,
 	buffers = malloc(rb.count * sizeof buffers[0]);
 	if (buffers == NULL)
 		return -ENOMEM;
-
-	page_size = getpagesize();
 
 	/* Map the buffers. */
 	for (i = 0; i < rb.count; ++i) {
@@ -500,34 +566,23 @@ static int video_alloc_buffers(struct device *dev, int nbufs,
 		printf("length: %u offset: %u timestamp type: %s\n",
 		       buf.length, buf.m.offset, ts_type);
 
+		buffers[i].idx = i;
+
 		switch (dev->memtype) {
 		case V4L2_MEMORY_MMAP:
-			buffers[i].mem = mmap(0, buf.length, PROT_READ | PROT_WRITE, MAP_SHARED, dev->fd, buf.m.offset);
-			if (buffers[i].mem == MAP_FAILED) {
-				printf("Unable to map buffer %u: %s (%d)\n", i,
-					strerror(errno), errno);
-				return ret;
-			}
-			buffers[i].size = buf.length;
-			buffers[i].padding = 0;
-			printf("Buffer %u mapped at address %p.\n", i, buffers[i].mem);
+			ret = video_buffer_mmap(dev, &buffers[i], &buf);
 			break;
 
 		case V4L2_MEMORY_USERPTR:
-			ret = posix_memalign(&buffers[i].mem, page_size, buf.length + offset + padding);
-			if (ret < 0) {
-				printf("Unable to allocate buffer %u (%d)\n", i, ret);
-				return -ENOMEM;
-			}
-			buffers[i].mem += offset;
-			buffers[i].size = buf.length;
-			buffers[i].padding = padding;
-			printf("Buffer %u allocated at address %p.\n", i, buffers[i].mem);
+			ret = video_buffer_alloc_userptr(&buffers[i], &buf, offset, padding);
 			break;
 
 		default:
 			break;
 		}
+
+		if (ret < 0)
+			return ret;
 	}
 
 	dev->buffers = buffers;
@@ -547,23 +602,21 @@ static int video_free_buffers(struct device *dev)
 	for (i = 0; i < dev->nbufs; ++i) {
 		switch (dev->memtype) {
 		case V4L2_MEMORY_MMAP:
-			ret = munmap(dev->buffers[i].mem, dev->buffers[i].size);
-			if (ret < 0) {
-				printf("Unable to unmap buffer %u: %s (%d)\n", i,
-					strerror(errno), errno);
+			ret = video_buffer_munmap(&dev->buffers[i]);
+			if (ret < 0)
 				return ret;
-			}
+
 			break;
 
 		case V4L2_MEMORY_USERPTR:
-			free(dev->buffers[i].mem);
+			free(dev->buffers[i].mem[0]);
 			break;
 
 		default:
 			break;
 		}
 
-		dev->buffers[i].mem = NULL;
+		dev->buffers[i].mem[0] = NULL;
 	}
 
 	memset(&rb, 0, sizeof rb);
@@ -596,19 +649,19 @@ static int video_queue_buffer(struct device *dev, int index, enum buffer_fill_mo
 	buf.index = index;
 	buf.type = dev->type;
 	buf.memory = dev->memtype;
-	buf.length = dev->buffers[index].size;
+	buf.length = dev->buffers[index].size[0];
 	if (dev->memtype == V4L2_MEMORY_USERPTR)
-		buf.m.userptr = (unsigned long)dev->buffers[index].mem;
+		buf.m.userptr = (unsigned long)dev->buffers[index].mem[0];
 
 	if (dev->type == V4L2_BUF_TYPE_VIDEO_OUTPUT) {
 		buf.bytesused = dev->patternsize;
-		memcpy(dev->buffers[buf.index].mem, dev->pattern, dev->patternsize);
+		memcpy(dev->buffers[buf.index].mem[0], dev->pattern, dev->patternsize);
 	} else {
 		if (fill & BUFFER_FILL_FRAME)
-			memset(dev->buffers[buf.index].mem, 0x55, dev->buffers[index].size);
+			memset(dev->buffers[buf.index].mem[0], 0x55, dev->buffers[index].size[0]);
 		if (fill & BUFFER_FILL_PADDING)
-			memset(dev->buffers[buf.index].mem + dev->buffers[index].size,
-			       0x55, dev->buffers[index].padding);
+			memset(dev->buffers[buf.index].mem[0] + dev->buffers[index].size[0],
+			       0x55, dev->buffers[index].padding[0]);
 	}
 
 	ret = ioctl(dev->fd, VIDIOC_QBUF, &buf);
@@ -944,7 +997,7 @@ static int video_set_quality(struct device *dev, unsigned int quality)
 
 static int video_load_test_pattern(struct device *dev, const char *filename)
 {
-	unsigned int size = dev->buffers[0].size;
+	unsigned int size = dev->buffers[0].size[0];
 	unsigned int x, y;
 	uint8_t *data;
 	int ret;
@@ -1023,15 +1076,15 @@ static int video_prepare_capture(struct device *dev, int nbufs, unsigned int off
 static void video_verify_buffer(struct device *dev, int index)
 {
 	struct buffer *buffer = &dev->buffers[index];
-	const uint8_t *data = buffer->mem + buffer->size;
+	const uint8_t *data = buffer->mem[0] + buffer->size[0];
 	unsigned int errors = 0;
 	unsigned int dirty = 0;
 	unsigned int i;
 
-	if (buffer->padding == 0)
+	if (buffer->padding[0] == 0)
 		return;
 
-	for (i = 0; i < buffer->padding; ++i) {
+	for (i = 0; i < buffer->padding[0]; ++i) {
 		if (data[i] != 0x55) {
 			errors++;
 			dirty = i + 1;
