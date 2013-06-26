@@ -78,6 +78,16 @@ struct device
 	unsigned int patternsize;
 };
 
+static bool video_is_capture(struct device *dev)
+{
+	return dev->type == V4L2_BUF_TYPE_VIDEO_CAPTURE;
+}
+
+static bool video_is_output(struct device *dev)
+{
+	return dev->type == V4L2_BUF_TYPE_VIDEO_OUTPUT;
+}
+
 static const char *v4l2_buf_type_name(enum v4l2_buf_type type)
 {
 	static struct {
@@ -242,7 +252,7 @@ static int video_open(struct device *dev, const char *devname, int no_query)
 
 	printf("Device `%s' on `%s' is a video %s device.\n",
 		cap.card, cap.bus_info,
-		dev->type == V4L2_BUF_TYPE_VIDEO_CAPTURE ? "capture" : "output");
+		video_is_capture(dev) ? "capture" : "output");
 	return 0;
 }
 
@@ -665,7 +675,7 @@ static int video_queue_buffer(struct device *dev, int index, enum buffer_fill_mo
 	if (dev->memtype == V4L2_MEMORY_USERPTR)
 		buf.m.userptr = (unsigned long)dev->buffers[index].mem[0];
 
-	if (dev->type == V4L2_BUF_TYPE_VIDEO_OUTPUT) {
+	if (video_is_output(dev)) {
 		buf.bytesused = dev->patternsize;
 		memcpy(dev->buffers[buf.index].mem[0], dev->pattern, dev->patternsize);
 	} else {
@@ -1069,7 +1079,7 @@ static int video_prepare_capture(struct device *dev, int nbufs, unsigned int off
 	if ((ret = video_alloc_buffers(dev, nbufs, offset, padding)) < 0)
 		return ret;
 
-	if (dev->type == V4L2_BUF_TYPE_VIDEO_OUTPUT) {
+	if (video_is_output(dev)) {
 		ret = video_load_test_pattern(dev, filename);
 		if (ret < 0)
 			return ret;
@@ -1206,7 +1216,7 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 			printf("Warning: bytes used %u != image size %u\n",
 			       buf.bytesused, dev->imagesize);
 
-		if (dev->type == V4L2_BUF_TYPE_VIDEO_CAPTURE)
+		if (video_is_capture(dev))
 			video_verify_buffer(dev, buf.index);
 
 		size += buf.bytesused;
@@ -1224,7 +1234,7 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 		last = buf.timestamp;
 
 		/* Save the image. */
-		if (dev->type == V4L2_BUF_TYPE_VIDEO_CAPTURE && pattern && !skip)
+		if (video_is_capture(dev) && pattern && !skip)
 			video_save_image(dev, &buf, pattern, i);
 
 		if (skip)
