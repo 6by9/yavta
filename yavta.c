@@ -77,8 +77,8 @@ struct device
 	unsigned char num_planes;
 	struct v4l2_plane_pix_format plane_fmt[VIDEO_MAX_PLANES];
 
-	void *pattern;
-	unsigned int patternsize;
+	void *pattern[VIDEO_MAX_PLANES];
+	unsigned int patternsize[VIDEO_MAX_PLANES];
 };
 
 static bool video_is_mplane(struct device *dev)
@@ -276,7 +276,11 @@ static int video_open(struct device *dev, const char *devname, int no_query)
 
 static void video_close(struct device *dev)
 {
-	free(dev->pattern);
+	unsigned int i;
+
+	for (i = 0; i < dev->num_planes; i++)
+		free(dev->pattern[i]);
+
 	free(dev->buffers);
 	close(dev->fd);
 }
@@ -427,6 +431,9 @@ static int video_get_format(struct device *dev)
 		dev->bytesperline = fmt.fmt.pix.bytesperline;
 		dev->imagesize = fmt.fmt.pix.bytesperline ? fmt.fmt.pix.sizeimage : 0;
 		dev->num_planes = 1;
+
+		dev->plane_fmt[0].bytesperline = fmt.fmt.pix.bytesperline;
+		dev->plane_fmt[0].sizeimage = fmt.fmt.pix.bytesperline ? fmt.fmt.pix.sizeimage : 0;
 
 		printf("Video format: %s (%08x) %ux%u (stride %u) buffer size %u\n",
 			v4l2_format_name(fmt.fmt.pix.pixelformat), fmt.fmt.pix.pixelformat,
@@ -806,15 +813,24 @@ static int video_queue_buffer(struct device *dev, int index, enum buffer_fill_mo
 		}
 	}
 
-	if (video_is_output(dev)) {
-		buf.bytesused = dev->patternsize;
-		memcpy(dev->buffers[buf.index].mem[0], dev->pattern, dev->patternsize);
-	} else {
-		if (fill & BUFFER_FILL_FRAME)
-			memset(dev->buffers[buf.index].mem[0], 0x55, dev->buffers[index].size[0]);
-		if (fill & BUFFER_FILL_PADDING)
-			memset(dev->buffers[buf.index].mem[0] + dev->buffers[index].size[0],
-			       0x55, dev->buffers[index].padding[0]);
+	for (i = 0; i < dev->num_planes; i++) {
+		if (video_is_output(dev)) {
+			if (video_is_mplane(dev))
+				buf.m.planes[i].bytesused = dev->patternsize[i];
+			else
+				buf.bytesused = dev->patternsize[i];
+
+			memcpy(dev->buffers[buf.index].mem[i], dev->pattern[i],
+			       dev->patternsize[i]);
+		} else {
+			if (fill & BUFFER_FILL_FRAME)
+				memset(dev->buffers[buf.index].mem[i], 0x55,
+				       dev->buffers[index].size[i]);
+			if (fill & BUFFER_FILL_PADDING)
+				memset(dev->buffers[buf.index].mem[i] +
+					dev->buffers[index].size[i],
+				       0x55, dev->buffers[index].padding[i]);
+		}
 	}
 
 	ret = ioctl(dev->fd, VIDIOC_QBUF, &buf);
@@ -1150,52 +1166,62 @@ static int video_set_quality(struct device *dev, unsigned int quality)
 
 static int video_load_test_pattern(struct device *dev, const char *filename)
 {
-	unsigned int size = dev->buffers[0].size[0];
-	unsigned int x, y;
-	uint8_t *data;
+	unsigned int plane;
+	unsigned int size;
+	int fd = -1;
 	int ret;
-	int fd;
+
+	if (filename != NULL) {
+		fd = open(filename, O_RDONLY);
+		if (fd == -1) {
+			printf("Unable to open test pattern file '%s': %s (%d).\n",
+				filename, strerror(errno), errno);
+			return -errno;
+		}
+	}
 
 	/* Load or generate the test pattern */
-	dev->pattern = malloc(size);
-	if (dev->pattern == NULL)
-		return -ENOMEM;
-
-	if (filename == NULL) {
-		if (dev->bytesperline == 0) {
-			printf("Compressed format detect and no test pattern filename given.\n"
-				"The test pattern can't be generated automatically.\n");
-			return -EINVAL;
+	for (plane = 0; plane < dev->num_planes; plane++) {
+		size = dev->buffers[0].size[plane];
+		dev->pattern[plane] = malloc(size);
+		if (dev->pattern[plane] == NULL) {
+			ret = -ENOMEM;
+			goto done;
 		}
 
-		data = dev->pattern;
+		if (filename != NULL) {
+			ret = read(fd, dev->pattern[plane], size);
+			if (ret != (int)size && dev->plane_fmt[plane].bytesperline != 0) {
+				printf("Test pattern file size %u doesn't match image size %u\n",
+					ret, size);
+				ret = -EINVAL;
+				goto done;
+			}
+		} else {
+			uint8_t *data = dev->pattern[plane];
+			unsigned int i;
 
-		for (y = 0; y < dev->height; ++y) {
-			for (x = 0; x < dev->bytesperline; ++x)
-				*data++ = x + y;
+			if (dev->plane_fmt[plane].bytesperline == 0) {
+				printf("Compressed format detected for plane %u and no test pattern filename given.\n"
+					"The test pattern can't be generated automatically.\n", plane);
+				ret = -EINVAL;
+				goto done;
+			}
+
+			for (i = 0; i < dev->plane_fmt[plane].sizeimage; ++i)
+				*data++ = i;
 		}
 
-		return 0;
+		dev->patternsize[plane] = size;
 	}
 
-	fd = open(filename, O_RDONLY);
-	if (fd == -1) {
-		printf("Unable to open test pattern file '%s': %s (%d).\n",
-			filename, strerror(errno), errno);
-		return -errno;
-	}
+	ret = 0;
 
-	ret = read(fd, dev->pattern, size);
-	close(fd);
+done:
+	if (fd != -1)
+		close(fd);
 
-	if (ret != (int)size && dev->bytesperline != 0) {
-		printf("Test pattern file size %u doesn't match image size %u\n",
-			ret, size);
-		return -EINVAL;
-	}
-
-	dev->patternsize = ret;
-	return 0;
+	return ret;
 }
 
 static int video_prepare_capture(struct device *dev, int nbufs, unsigned int offset,
