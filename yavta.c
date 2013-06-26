@@ -74,18 +74,29 @@ struct device
 	unsigned int bytesperline;
 	unsigned int imagesize;
 
+	unsigned char num_planes;
+	struct v4l2_plane_pix_format plane_fmt[VIDEO_MAX_PLANES];
+
 	void *pattern;
 	unsigned int patternsize;
 };
 
+static bool video_is_mplane(struct device *dev)
+{
+	return dev->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE ||
+	       dev->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+}
+
 static bool video_is_capture(struct device *dev)
 {
-	return dev->type == V4L2_BUF_TYPE_VIDEO_CAPTURE;
+	return dev->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE ||
+	       dev->type == V4L2_BUF_TYPE_VIDEO_CAPTURE;
 }
 
 static bool video_is_output(struct device *dev)
 {
-	return dev->type == V4L2_BUF_TYPE_VIDEO_OUTPUT;
+	return dev->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE ||
+	       dev->type == V4L2_BUF_TYPE_VIDEO_OUTPUT;
 }
 
 static const char *v4l2_buf_type_name(enum v4l2_buf_type type)
@@ -95,7 +106,9 @@ static const char *v4l2_buf_type_name(enum v4l2_buf_type type)
 		const char *name;
 	} names[] = {
 		{ V4L2_BUF_TYPE_VIDEO_CAPTURE, "Video capture" },
+		{ V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE, "Video capture mplanes" },
 		{ V4L2_BUF_TYPE_VIDEO_OUTPUT, "Video output" },
+		{ V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE, "Video output mplanes" },
 		{ V4L2_BUF_TYPE_VIDEO_OVERLAY, "Video overlay" },
 	};
 
@@ -239,7 +252,11 @@ static int video_open(struct device *dev, const char *devname, int no_query)
 	capabilities = cap.capabilities & V4L2_CAP_DEVICE_CAPS
 		     ? cap.device_caps : cap.capabilities;
 
-	if (capabilities & V4L2_CAP_VIDEO_CAPTURE)
+	if (capabilities & V4L2_CAP_VIDEO_CAPTURE_MPLANE)
+		dev->type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+	else if (capabilities & V4L2_CAP_VIDEO_OUTPUT_MPLANE)
+		dev->type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+	else if (capabilities & V4L2_CAP_VIDEO_CAPTURE)
 		dev->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 	else if (capabilities & V4L2_CAP_VIDEO_OUTPUT)
 		dev->type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
@@ -250,9 +267,10 @@ static int video_open(struct device *dev, const char *devname, int no_query)
 		return -EINVAL;
 	}
 
-	printf("Device `%s' on `%s' is a video %s device.\n",
+	printf("Device `%s' on `%s' is a video %s (%s mplanes) device.\n",
 		cap.card, cap.bus_info,
-		video_is_capture(dev) ? "capture" : "output");
+		video_is_capture(dev) ? "capture" : "output",
+		video_is_mplane(dev) ? "with" : "without");
 	return 0;
 }
 
@@ -370,6 +388,7 @@ static void set_control(struct device *dev, unsigned int id, int type,
 static int video_get_format(struct device *dev)
 {
 	struct v4l2_format fmt;
+	unsigned int i;
 	int ret;
 
 	memset(&fmt, 0, sizeof fmt);
@@ -382,15 +401,39 @@ static int video_get_format(struct device *dev)
 		return ret;
 	}
 
-	dev->width = fmt.fmt.pix.width;
-	dev->height = fmt.fmt.pix.height;
-	dev->bytesperline = fmt.fmt.pix.bytesperline;
-	dev->imagesize = fmt.fmt.pix.bytesperline ? fmt.fmt.pix.sizeimage : 0;
+	if (video_is_mplane(dev)) {
+		dev->width = fmt.fmt.pix_mp.width;
+		dev->height = fmt.fmt.pix_mp.height;
+		dev->num_planes = fmt.fmt.pix_mp.num_planes;
 
-	printf("Video format: %s (%08x) %ux%u (stride %u) buffer size %u\n",
-		v4l2_format_name(fmt.fmt.pix.pixelformat), fmt.fmt.pix.pixelformat,
-		fmt.fmt.pix.width, fmt.fmt.pix.height, fmt.fmt.pix.bytesperline,
-		fmt.fmt.pix.sizeimage);
+		printf("Video format: %s (%08x) %ux%u, %u planes: \n",
+			v4l2_format_name(fmt.fmt.pix_mp.pixelformat), fmt.fmt.pix_mp.pixelformat,
+			fmt.fmt.pix_mp.width, fmt.fmt.pix_mp.height, fmt.fmt.pix_mp.num_planes);
+
+		for (i = 0; i < fmt.fmt.pix_mp.num_planes; i++) {
+			dev->plane_fmt[i].bytesperline =
+					fmt.fmt.pix_mp.plane_fmt[i].bytesperline;
+			dev->plane_fmt[i].sizeimage =
+					fmt.fmt.pix_mp.plane_fmt[i].bytesperline ?
+						fmt.fmt.pix_mp.plane_fmt[i].sizeimage : 0;
+
+			printf(" * Stride %u, buffer size %u\n",
+				fmt.fmt.pix_mp.plane_fmt[i].bytesperline,
+				fmt.fmt.pix_mp.plane_fmt[i].sizeimage);
+		}
+	} else {
+		dev->width = fmt.fmt.pix.width;
+		dev->height = fmt.fmt.pix.height;
+		dev->bytesperline = fmt.fmt.pix.bytesperline;
+		dev->imagesize = fmt.fmt.pix.bytesperline ? fmt.fmt.pix.sizeimage : 0;
+		dev->num_planes = 1;
+
+		printf("Video format: %s (%08x) %ux%u (stride %u) buffer size %u\n",
+			v4l2_format_name(fmt.fmt.pix.pixelformat), fmt.fmt.pix.pixelformat,
+			fmt.fmt.pix.width, fmt.fmt.pix.height, fmt.fmt.pix.bytesperline,
+			fmt.fmt.pix.sizeimage);
+	}
+
 	return 0;
 }
 
@@ -398,15 +441,30 @@ static int video_set_format(struct device *dev, unsigned int w, unsigned int h,
 			    unsigned int format, unsigned int stride)
 {
 	struct v4l2_format fmt;
+	unsigned int i;
 	int ret;
 
 	memset(&fmt, 0, sizeof fmt);
 	fmt.type = dev->type;
-	fmt.fmt.pix.width = w;
-	fmt.fmt.pix.height = h;
-	fmt.fmt.pix.pixelformat = format;
-	fmt.fmt.pix.bytesperline = stride;
-	fmt.fmt.pix.field = V4L2_FIELD_ANY;
+
+	if (video_is_mplane(dev)) {
+		const struct v4l2_format_info *info = v4l2_format_by_fourcc(format);
+
+		fmt.fmt.pix_mp.width = w;
+		fmt.fmt.pix_mp.height = h;
+		fmt.fmt.pix_mp.pixelformat = format;
+		fmt.fmt.pix_mp.field = V4L2_FIELD_ANY;
+		fmt.fmt.pix_mp.num_planes = info->n_planes;
+
+		for (i = 0; i < fmt.fmt.pix_mp.num_planes; i++)
+			fmt.fmt.pix_mp.plane_fmt[i].bytesperline = stride;
+	} else {
+		fmt.fmt.pix.width = w;
+		fmt.fmt.pix.height = h;
+		fmt.fmt.pix.pixelformat = format;
+		fmt.fmt.pix.field = V4L2_FIELD_ANY;
+		fmt.fmt.pix.bytesperline = stride;
+	}
 
 	ret = ioctl(dev->fd, VIDIOC_S_FMT, &fmt);
 	if (ret < 0) {
@@ -415,10 +473,23 @@ static int video_set_format(struct device *dev, unsigned int w, unsigned int h,
 		return ret;
 	}
 
-	printf("Video format set: %s (%08x) %ux%u (stride %u) buffer size %u\n",
-		v4l2_format_name(fmt.fmt.pix.pixelformat), fmt.fmt.pix.pixelformat,
-		fmt.fmt.pix.width, fmt.fmt.pix.height, fmt.fmt.pix.bytesperline,
-		fmt.fmt.pix.sizeimage);
+	if (video_is_mplane(dev)) {
+		printf("Video format: %s (%08x) %ux%u, %u planes: \n",
+			v4l2_format_name(fmt.fmt.pix_mp.pixelformat), fmt.fmt.pix_mp.pixelformat,
+			fmt.fmt.pix_mp.width, fmt.fmt.pix_mp.height, fmt.fmt.pix_mp.num_planes);
+
+		for (i = 0; i < fmt.fmt.pix_mp.num_planes; i++) {
+			printf(" * Stride %u, buffer size %u\n",
+				fmt.fmt.pix_mp.plane_fmt[i].bytesperline,
+				fmt.fmt.pix_mp.plane_fmt[i].sizeimage);
+		}
+	} else {
+		printf("Video format set: %s (%08x) %ux%u (stride %u) buffer size %u\n",
+			v4l2_format_name(fmt.fmt.pix.pixelformat), fmt.fmt.pix.pixelformat,
+			fmt.fmt.pix.width, fmt.fmt.pix.height, fmt.fmt.pix.bytesperline,
+			fmt.fmt.pix.sizeimage);
+	}
+
 	return 0;
 }
 
@@ -473,71 +544,115 @@ static int video_buffer_mmap(struct device *dev, struct buffer *buffer,
 {
 	unsigned int length;
 	unsigned int offset;
+	unsigned int i;
 
-	length = v4l2buf->length;
-	offset = v4l2buf->m.offset;
+	for (i = 0; i < dev->num_planes; i++) {
+		if (video_is_mplane(dev)) {
+			length = v4l2buf->m.planes[i].length;
+			offset = v4l2buf->m.planes[i].m.mem_offset;
+		} else {
+			length = v4l2buf->length;
+			offset = v4l2buf->m.offset;
+		}
 
-	buffer->mem[0] = mmap(0, length, PROT_READ | PROT_WRITE, MAP_SHARED,
-			      dev->fd, offset);
-	if (buffer->mem[0] == MAP_FAILED) {
-		printf("Unable to map buffer %u: %s (%d)\n", buffer->idx,
-			strerror(errno), errno);
-		return -1;
+		buffer->mem[i] = mmap(0, length, PROT_READ | PROT_WRITE, MAP_SHARED,
+				      dev->fd, offset);
+		if (buffer->mem[i] == MAP_FAILED) {
+			printf("Unable to map buffer %u/%u: %s (%d)\n",
+			       buffer->idx, i, strerror(errno), errno);
+			return -1;
+		}
+
+		buffer->size[i] = length;
+		buffer->padding[i] = 0;
+
+		printf("Buffer %u/%u mapped at address %p.\n",
+		       buffer->idx, i, buffer->mem[i]);
 	}
-
-	buffer->size[0] = length;
-	buffer->padding[0] = 0;
-
-	printf("Buffer %u mapped at address %p.\n", buffer->idx, buffer->mem[0]);
 
 	return 0;
 }
 
-static int video_buffer_munmap(struct buffer *buffer)
+static int video_buffer_munmap(struct device *dev, struct buffer *buffer)
 {
+	unsigned int i;
 	int ret;
 
-	ret = munmap(buffer->mem[0], buffer->size[0]);
-	if (ret < 0) {
-		printf("Unable to unmap buffer %u: %s (%d)\n", buffer->idx,
-			strerror(errno), errno);
-	}
+	for (i = 0; i < dev->num_planes; i++) {
+		ret = munmap(buffer->mem[i], buffer->size[i]);
+		if (ret < 0) {
+			printf("Unable to unmap buffer %u/%u: %s (%d)\n",
+			       buffer->idx, i, strerror(errno), errno);
+		}
 
-	buffer->mem[0] = NULL;
+		buffer->mem[i] = NULL;
+	}
 
 	return 0;
 }
 
-static int video_buffer_alloc_userptr(struct buffer *buffer,
+static int video_buffer_alloc_userptr(struct device *dev, struct buffer *buffer,
 				      struct v4l2_buffer *v4l2buf,
 				      unsigned int offset, unsigned int padding)
 {
+	int page_size = getpagesize();
 	unsigned int length;
+	unsigned int i;
 	int ret;
 
-	int page_size = getpagesize();
+	for (i = 0; i < dev->num_planes; i++) {
+		if (video_is_mplane(dev))
+			length = v4l2buf->m.planes[i].length;
+		else
+			length = v4l2buf->length;
 
-	length = v4l2buf->length;
+		ret = posix_memalign(&buffer->mem[i], page_size,
+				     length + offset + padding);
+		if (ret < 0) {
+			printf("Unable to allocate buffer %u/%u (%d)\n",
+			       buffer->idx, i, ret);
+			return -ENOMEM;
+		}
 
-	ret = posix_memalign(&buffer->mem[0], page_size, length + offset + padding);
-	if (ret < 0) {
-		printf("Unable to allocate buffer %u (%d)\n", buffer->idx, ret);
-		return -ENOMEM;
+		buffer->mem[i] += offset;
+		buffer->size[i] = length;
+		buffer->padding[i] = padding;
+
+		printf("Buffer %u/%u allocated at address %p.\n",
+		       buffer->idx, i, buffer->mem[i]);
 	}
 
-	buffer->mem[0] += offset;
-	buffer->size[0] = length;
-	buffer->padding[0] = padding;
-
-	printf("Buffer %u allocated at address %p.\n", buffer->idx, buffer->mem[0]);
-
 	return 0;
+}
 
+static void video_buffer_free_userptr(struct device *dev, struct buffer *buffer)
+{
+	unsigned int i;
+
+	for (i = 0; i < dev->num_planes; i++) {
+		free(buffer->mem[i]);
+		buffer->mem[i] = NULL;
+	}
+}
+
+static void video_buffer_fill_userptr(struct device *dev, struct buffer *buffer,
+				      struct v4l2_buffer *v4l2buf)
+{
+	unsigned int i;
+
+	if (!video_is_mplane(dev)) {
+		v4l2buf->m.userptr = (unsigned long)buffer->mem[0];
+		return;
+	}
+
+	for (i = 0; i < dev->num_planes; i++)
+		v4l2buf->m.planes[i].m.userptr = (unsigned long)buffer->mem[i];
 }
 
 static int video_alloc_buffers(struct device *dev, int nbufs,
 	unsigned int offset, unsigned int padding)
 {
+	struct v4l2_plane planes[VIDEO_MAX_PLANES];
 	struct v4l2_requestbuffers rb;
 	struct v4l2_buffer buf;
 	struct buffer *buffers;
@@ -565,10 +680,16 @@ static int video_alloc_buffers(struct device *dev, int nbufs,
 	/* Map the buffers. */
 	for (i = 0; i < rb.count; ++i) {
 		const char *ts_type;
+
 		memset(&buf, 0, sizeof buf);
+		memset(planes, 0, sizeof planes);
+
 		buf.index = i;
 		buf.type = dev->type;
 		buf.memory = dev->memtype;
+		buf.length = VIDEO_MAX_PLANES;
+		buf.m.planes = planes;
+
 		ret = ioctl(dev->fd, VIDIOC_QUERYBUF, &buf);
 		if (ret < 0) {
 			printf("Unable to query buffer %u: %s (%d).\n", i,
@@ -596,7 +717,7 @@ static int video_alloc_buffers(struct device *dev, int nbufs,
 			break;
 
 		case V4L2_MEMORY_USERPTR:
-			ret = video_buffer_alloc_userptr(&buffers[i], &buf, offset, padding);
+			ret = video_buffer_alloc_userptr(dev, &buffers[i], &buf, offset, padding);
 			break;
 
 		default:
@@ -624,21 +745,16 @@ static int video_free_buffers(struct device *dev)
 	for (i = 0; i < dev->nbufs; ++i) {
 		switch (dev->memtype) {
 		case V4L2_MEMORY_MMAP:
-			ret = video_buffer_munmap(&dev->buffers[i]);
+			ret = video_buffer_munmap(dev, &dev->buffers[i]);
 			if (ret < 0)
 				return ret;
-
 			break;
-
 		case V4L2_MEMORY_USERPTR:
-			free(dev->buffers[i].mem[0]);
+			video_buffer_free_userptr(dev, &dev->buffers[i]);
 			break;
-
 		default:
 			break;
 		}
-
-		dev->buffers[i].mem[0] = NULL;
 	}
 
 	memset(&rb, 0, sizeof rb);
@@ -665,15 +781,30 @@ static int video_free_buffers(struct device *dev)
 static int video_queue_buffer(struct device *dev, int index, enum buffer_fill_mode fill)
 {
 	struct v4l2_buffer buf;
+	struct v4l2_plane planes[VIDEO_MAX_PLANES];
 	int ret;
+	unsigned int i;
 
 	memset(&buf, 0, sizeof buf);
 	buf.index = index;
 	buf.type = dev->type;
 	buf.memory = dev->memtype;
-	buf.length = dev->buffers[index].size[0];
-	if (dev->memtype == V4L2_MEMORY_USERPTR)
-		buf.m.userptr = (unsigned long)dev->buffers[index].mem[0];
+
+	if (video_is_mplane(dev)) {
+		buf.m.planes = planes;
+		buf.length = dev->num_planes;
+	} else {
+		buf.length = dev->buffers[index].size[0];
+	}
+
+	if (dev->memtype == V4L2_MEMORY_USERPTR) {
+		if (video_is_mplane(dev)) {
+			for (i = 0; i < dev->num_planes; i++)
+				buf.m.planes[i].m.userptr = (unsigned long)dev->buffers[index].mem[i];
+		} else {
+			buf.m.userptr = (unsigned long)dev->buffers[index].mem[0];
+		}
+	}
 
 	if (video_is_output(dev)) {
 		buf.bytesused = dev->patternsize;
@@ -1132,10 +1263,11 @@ static void video_save_image(struct device *dev, struct v4l2_buffer *buf,
 			     const char *pattern, unsigned int sequence)
 {
 	unsigned int size;
+	unsigned int i;
 	char *filename;
 	const char *p;
 	bool append;
-	int ret;
+	int ret = 0;
 	int fd;
 
 	size = strlen(pattern);
@@ -1159,24 +1291,34 @@ static void video_save_image(struct device *dev, struct v4l2_buffer *buf,
 	if (fd == -1)
 		return;
 
-	ret = write(fd, dev->buffers[buf->index].mem, buf->bytesused);
-	close(fd);
+	for (i = 0; i < dev->num_planes; i++) {
+		unsigned int length;
 
-	if (ret < 0)
-		printf("write error: %s (%d)\n", strerror(errno), errno);
-	else if (ret != (int)buf->bytesused)
-		printf("write error: only %d bytes written instead of %u\n",
-		       ret, buf->bytesused);
+		if (video_is_mplane(dev))
+			length = buf->m.planes[i].bytesused;
+		else
+			length = buf->bytesused;
+
+		ret = write(fd, dev->buffers[buf->index].mem[i], length);
+		if (ret < 0) {
+			printf("write error: %s (%d)\n", strerror(errno), errno);
+			break;
+		} else if (ret != (int)length)
+			printf("write error: only %d bytes written instead of %u\n",
+			       ret, length);
+	}
+	close(fd);
 }
 
 static int video_do_capture(struct device *dev, unsigned int nframes,
 	unsigned int skip, unsigned int delay, const char *pattern,
 	int do_requeue_last, enum buffer_fill_mode fill)
 {
+	struct v4l2_plane planes[VIDEO_MAX_PLANES];
+	struct v4l2_buffer buf;
 	struct timespec start;
 	struct timeval last;
 	struct timespec ts;
-	struct v4l2_buffer buf;
 	unsigned int size;
 	unsigned int i;
 	double bps;
@@ -1196,8 +1338,13 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 	for (i = 0; i < nframes; ++i) {
 		/* Dequeue a buffer. */
 		memset(&buf, 0, sizeof buf);
+		memset(planes, 0, sizeof planes);
+
 		buf.type = dev->type;
 		buf.memory = dev->memtype;
+		buf.length = VIDEO_MAX_PLANES;
+		buf.m.planes = planes;
+
 		ret = ioctl(dev->fd, VIDIOC_DQBUF, &buf);
 		if (ret < 0) {
 			if (errno != EIO) {
@@ -1208,7 +1355,7 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 			buf.type = dev->type;
 			buf.memory = dev->memtype;
 			if (dev->memtype == V4L2_MEMORY_USERPTR)
-				buf.m.userptr = (unsigned long)dev->buffers[i].mem;
+				video_buffer_fill_userptr(dev, &dev->buffers[i], &buf);
 		}
 
 		if (dev->type == V4L2_BUF_TYPE_VIDEO_CAPTURE &&
@@ -1587,7 +1734,9 @@ int main(int argc, char *argv[])
 	if (do_enum_formats) {
 		printf("- Available formats:\n");
 		video_enum_formats(&dev, V4L2_BUF_TYPE_VIDEO_CAPTURE);
+		video_enum_formats(&dev, V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE);
 		video_enum_formats(&dev, V4L2_BUF_TYPE_VIDEO_OUTPUT);
+		video_enum_formats(&dev, V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE);
 		video_enum_formats(&dev, V4L2_BUF_TYPE_VIDEO_OVERLAY);
 	}
 
