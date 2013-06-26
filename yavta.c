@@ -102,7 +102,7 @@ static const char *v4l2_buf_type_name(enum v4l2_buf_type type)
 		return "Unknown";
 }
 
-static struct {
+static struct v4l2_format_info {
 	const char *name;
 	unsigned int fourcc;
 	unsigned char n_planes;
@@ -151,15 +151,39 @@ static struct {
 	{ "MPEG", V4L2_PIX_FMT_MPEG, 1 },
 };
 
-static const char *v4l2_format_name(unsigned int fourcc)
+static const struct v4l2_format_info *v4l2_format_by_fourcc(unsigned int fourcc)
 {
-	static char name[5];
 	unsigned int i;
 
 	for (i = 0; i < ARRAY_SIZE(pixel_formats); ++i) {
 		if (pixel_formats[i].fourcc == fourcc)
-			return pixel_formats[i].name;
+			return &pixel_formats[i];
 	}
+
+	return NULL;
+}
+
+static const struct v4l2_format_info *v4l2_format_by_name(const char *name)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(pixel_formats); ++i) {
+		if (strcasecmp(pixel_formats[i].name, name) == 0)
+			return &pixel_formats[i];
+	}
+
+	return NULL;
+}
+
+static const char *v4l2_format_name(unsigned int fourcc)
+{
+	const struct v4l2_format_info *info;
+	static char name[5];
+	unsigned int i;
+
+	info = v4l2_format_by_fourcc(fourcc);
+	if (info)
+		return info->name;
 
 	for (i = 0; i < 4; ++i) {
 		name[i] = fourcc & 0xff;
@@ -168,18 +192,6 @@ static const char *v4l2_format_name(unsigned int fourcc)
 
 	name[4] = '\0';
 	return name;
-}
-
-static unsigned int v4l2_format_code(const char *name)
-{
-	unsigned int i;
-
-	for (i = 0; i < ARRAY_SIZE(pixel_formats); ++i) {
-		if (strcasecmp(pixel_formats[i].name, name) == 0)
-			return pixel_formats[i].fourcc;
-	}
-
-	return 0;
 }
 
 static int video_open(struct device *dev, const char *devname, int no_query)
@@ -1347,6 +1359,7 @@ int main(int argc, char *argv[])
 	int ret;
 
 	/* Options parsings */
+	const struct v4l2_format_info *info;
 	int do_file = 0, do_capture = 0, do_pause = 0;
 	int do_set_time_per_frame = 0;
 	int do_enum_formats = 0, do_set_format = 0;
@@ -1399,11 +1412,12 @@ int main(int argc, char *argv[])
 			break;
 		case 'f':
 			do_set_format = 1;
-			pixelformat = v4l2_format_code(optarg);
-			if (pixelformat == 0) {
+			info = v4l2_format_by_name(optarg);
+			if (info == NULL) {
 				printf("Unsupported video format '%s'\n", optarg);
 				return 1;
 			}
+			pixelformat = info->fourcc;
 			break;
 		case 'F':
 			do_file = 1;
