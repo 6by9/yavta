@@ -71,8 +71,6 @@ struct device
 
 	unsigned int width;
 	unsigned int height;
-	unsigned int bytesperline;
-	unsigned int imagesize;
 
 	unsigned char num_planes;
 	struct v4l2_plane_pix_format plane_fmt[VIDEO_MAX_PLANES];
@@ -428,8 +426,6 @@ static int video_get_format(struct device *dev)
 	} else {
 		dev->width = fmt.fmt.pix.width;
 		dev->height = fmt.fmt.pix.height;
-		dev->bytesperline = fmt.fmt.pix.bytesperline;
-		dev->imagesize = fmt.fmt.pix.bytesperline ? fmt.fmt.pix.sizeimage : 0;
 		dev->num_planes = 1;
 
 		dev->plane_fmt[0].bytesperline = fmt.fmt.pix.bytesperline;
@@ -1252,35 +1248,50 @@ static int video_prepare_capture(struct device *dev, int nbufs, unsigned int off
 	return 0;
 }
 
-static void video_verify_buffer(struct device *dev, int index)
+static void video_verify_buffer(struct device *dev, struct v4l2_buffer *buf)
 {
-	struct buffer *buffer = &dev->buffers[index];
-	const uint8_t *data = buffer->mem[0] + buffer->size[0];
-	unsigned int errors = 0;
-	unsigned int dirty = 0;
+	struct buffer *buffer = &dev->buffers[buf->index];
+	unsigned int plane;
 	unsigned int i;
 
-	if (buffer->padding[0] == 0)
-		return;
+	for (plane = 0; plane < dev->num_planes; ++plane) {
+		const uint8_t *data = buffer->mem[plane] + buffer->size[plane];
+		unsigned int errors = 0;
+		unsigned int dirty = 0;
+		unsigned int length;
 
-	for (i = 0; i < buffer->padding[0]; ++i) {
-		if (data[i] != 0x55) {
-			errors++;
-			dirty = i + 1;
+		if (video_is_mplane(dev))
+			length = buf->m.planes[plane].bytesused;
+		else
+			length = buf->bytesused;
+
+		if (dev->plane_fmt[plane].sizeimage &&
+		    dev->plane_fmt[plane].sizeimage != length)
+			printf("Warning: bytes used %u != image size %u for plane %u\n",
+			       length, dev->plane_fmt[plane].sizeimage, plane);
+
+		if (buffer->padding[plane] == 0)
+			continue;
+
+		for (i = 0; i < buffer->padding[plane]; ++i) {
+			if (data[i] != 0x55) {
+				errors++;
+				dirty = i + 1;
+			}
 		}
-	}
 
-	if (errors) {
-		printf("Warning: %u bytes overwritten among %u first padding bytes\n",
-		       errors, dirty);
+		if (errors) {
+			printf("Warning: %u bytes overwritten among %u first padding bytes for plane %u\n",
+			       errors, dirty, plane);
 
-		dirty = (dirty + 15) & ~15;
-		dirty = dirty > 32 ? 32 : dirty;
+			dirty = (dirty + 15) & ~15;
+			dirty = dirty > 32 ? 32 : dirty;
 
-		for (i = 0; i < dirty; ++i) {
-			printf("%02x ", data[i]);
-			if (i % 16 == 15)
-				printf("\n");
+			for (i = 0; i < dirty; ++i) {
+				printf("%02x ", data[i]);
+				if (i % 16 == 15)
+					printf("\n");
+			}
 		}
 	}
 }
@@ -1384,13 +1395,8 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 				video_buffer_fill_userptr(dev, &dev->buffers[i], &buf);
 		}
 
-		if (dev->type == V4L2_BUF_TYPE_VIDEO_CAPTURE &&
-		    dev->imagesize != 0	&& buf.bytesused != dev->imagesize)
-			printf("Warning: bytes used %u != image size %u\n",
-			       buf.bytesused, dev->imagesize);
-
 		if (video_is_capture(dev))
-			video_verify_buffer(dev, buf.index);
+			video_verify_buffer(dev, &buf);
 
 		size += buf.bytesused;
 
