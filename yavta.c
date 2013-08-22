@@ -180,6 +180,7 @@ static unsigned int v4l2_format_code(const char *name)
 static int video_open(struct device *dev, const char *devname, int no_query)
 {
 	struct v4l2_capability cap;
+	unsigned int capabilities;
 	int ret;
 
 	memset(dev, 0, sizeof *dev);
@@ -208,9 +209,12 @@ static int video_open(struct device *dev, const char *devname, int no_query)
 	if (ret < 0)
 		return 0;
 
-	if (cap.capabilities & V4L2_CAP_VIDEO_CAPTURE)
+	capabilities = cap.capabilities & V4L2_CAP_DEVICE_CAPS
+		     ? cap.device_caps : cap.capabilities;
+
+	if (capabilities & V4L2_CAP_VIDEO_CAPTURE)
 		dev->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-	else if (cap.capabilities & V4L2_CAP_VIDEO_OUTPUT)
+	else if (capabilities & V4L2_CAP_VIDEO_OUTPUT)
 		dev->type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
 	else {
 		printf("Error opening device %s: neither video capture "
