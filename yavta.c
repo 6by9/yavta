@@ -278,7 +278,8 @@ static int get_control(struct device *dev, unsigned int id, int type,
 			*val = ctrl.value;
 		return 0;
 	}
-	if (errno == EINVAL || errno == ENOTTY) {
+	if (type != V4L2_CTRL_TYPE_INTEGER64 && type != V4L2_CTRL_TYPE_STRING &&
+	    (errno == EINVAL || errno == ENOTTY)) {
 		struct v4l2_control old;
 
 		old.id = id;
@@ -322,7 +323,8 @@ static void set_control(struct device *dev, unsigned int id, int type,
 			val = ctrl.value64;
 		else
 			val = ctrl.value;
-	} else if (errno == EINVAL || errno == ENOTTY) {
+	} else if (!is_64 && type != V4L2_CTRL_TYPE_STRING &&
+		   (errno == EINVAL || errno == ENOTTY)) {
 		struct v4l2_control old;
 
 		old.id = id;
