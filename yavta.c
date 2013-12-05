@@ -326,6 +326,7 @@ static void set_control(struct device *dev, unsigned int id, int type,
 		struct v4l2_control old;
 
 		old.id = id;
+		old.value = val;
 		ret = ioctl(dev->fd, VIDIOC_S_CTRL, &old);
 		if (ret != -1)
 			val = old.value;
