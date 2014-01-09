@@ -634,7 +634,8 @@ static int video_enable(struct device *dev, int enable)
 	return 0;
 }
 
-static void video_query_menu(struct device *dev, struct v4l2_queryctrl *query)
+static void video_query_menu(struct device *dev, struct v4l2_queryctrl *query,
+			     unsigned int value)
 {
 	struct v4l2_querymenu menu;
 	int ret;
@@ -647,9 +648,11 @@ static void video_query_menu(struct device *dev, struct v4l2_queryctrl *query)
 			continue;
 
 		if (query->type == V4L2_CTRL_TYPE_MENU)
-			printf("  %u: %.32s\n", menu.index, menu.name);
+			printf("  %u: %.32s%s\n", menu.index, menu.name,
+			       menu.index == value ? " (*)" : "");
 		else
-			printf("  %u: %lld\n", menu.index, menu.value);
+			printf("  %u: %lld%s\n", menu.index, menu.value,
+			       menu.index == value ? " (*)" : "");
 	};
 }
 
@@ -695,7 +698,7 @@ static void video_list_controls(struct device *dev)
 
 		if (query.type == V4L2_CTRL_TYPE_MENU ||
 		    query.type == V4L2_CTRL_TYPE_INTEGER_MENU)
-			video_query_menu(dev, &query);
+			video_query_menu(dev, &query, val64);
 
 		nctrls++;
 	}
