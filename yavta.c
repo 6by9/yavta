@@ -389,6 +389,11 @@ static void video_close(struct device *dev)
 		close(dev->fd);
 }
 
+static void video_log_status(struct device *dev)
+{
+	ioctl(dev->fd, VIDIOC_LOG_STATUS);
+}
+
 static unsigned int get_control_type(struct device *dev, unsigned int id)
 {
 	struct v4l2_queryctrl query;
@@ -1645,6 +1650,7 @@ static void usage(const char *argv0)
 	printf("    --enum-inputs		Enumerate inputs\n");
 	printf("    --fd                        Use a numeric file descriptor insted of a device\n");
 	printf("    --field			Interlaced format field order\n");
+	printf("    --log-status		Log device status\n");
 	printf("    --no-query			Don't query capabilities on open\n");
 	printf("    --offset			User pointer buffer offset from page start\n");
 	printf("    --requeue-last		Requeue the last buffers before streamoff\n");
@@ -1665,6 +1671,7 @@ static void usage(const char *argv0)
 #define OPT_FD			264
 #define OPT_TSTAMP_SRC		265
 #define OPT_FIELD		266
+#define OPT_LOG_STATUS		267
 
 static struct option opts[] = {
 	{"buffer-type", 1, 0, 'B'},
@@ -1681,6 +1688,7 @@ static struct option opts[] = {
 	{"help", 0, 0, 'h'},
 	{"input", 1, 0, 'i'},
 	{"list-controls", 0, 0, 'l'},
+	{"log-status", 0, 0, OPT_LOG_STATUS},
 	{"nbufs", 1, 0, 'n'},
 	{"no-query", 0, 0, OPT_NO_QUERY},
 	{"offset", 1, 0, OPT_USERPTR_OFFSET},
@@ -1716,7 +1724,7 @@ int main(int argc, char *argv[])
 	int do_enum_inputs = 0, do_set_input = 0;
 	int do_list_controls = 0, do_get_control = 0, do_set_control = 0;
 	int do_sleep_forever = 0, do_requeue_last = 0;
-	int do_rt = 0;
+	int do_rt = 0, do_log_status = 0;
 	int no_query = 0;
 	char *endptr;
 	int c;
@@ -1886,6 +1894,9 @@ int main(int argc, char *argv[])
 				return 1;
 			}
 			break;
+		case OPT_LOG_STATUS:
+			do_log_status = 1;
+			break;
 		case OPT_NO_QUERY:
 			no_query = 1;
 			break;
@@ -1953,6 +1964,9 @@ int main(int argc, char *argv[])
 		video_set_buf_type(&dev, ret);
 
 	dev.memtype = memtype;
+
+	if (do_log_status)
+		video_log_status(&dev);
 
 	if (do_get_control) {
 		int64_t val;
