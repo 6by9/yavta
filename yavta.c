@@ -687,7 +687,7 @@ static int video_alloc_buffers(struct device *dev, int nbufs,
 
 	/* Map the buffers. */
 	for (i = 0; i < rb.count; ++i) {
-		const char *ts_type;
+		const char *ts_type, *ts_source;
 
 		memset(&buf, 0, sizeof buf);
 		memset(planes, 0, sizeof planes);
@@ -714,8 +714,18 @@ static int video_alloc_buffers(struct device *dev, int nbufs,
 		default:
 			ts_type = "invalid";
 		}
-		printf("length: %u offset: %u timestamp type: %s\n",
-		       buf.length, buf.m.offset, ts_type);
+		switch (buf.flags & V4L2_BUF_FLAG_TSTAMP_SRC_MASK) {
+		case V4L2_BUF_FLAG_TSTAMP_SRC_EOF:
+			ts_source = "EoF";
+			break;
+		case V4L2_BUF_FLAG_TSTAMP_SRC_SOE:
+			ts_source = "SoE";
+			break;
+		default:
+			ts_source = "invalid";
+		}
+		printf("length: %u offset: %u timestamp type/source: %s/%s\n",
+		       buf.length, buf.m.offset, ts_type, ts_source);
 
 		buffers[i].idx = i;
 
