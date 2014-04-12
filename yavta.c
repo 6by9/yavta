@@ -220,17 +220,20 @@ static const char *v4l2_format_name(unsigned int fourcc)
 	return name;
 }
 
-static int video_open(struct device *dev, const char *devname, int no_query)
+static void video_init(struct device *dev)
 {
-	struct v4l2_capability cap;
-	unsigned int capabilities;
-	int ret;
-
 	memset(dev, 0, sizeof *dev);
 	dev->fd = -1;
 	dev->memtype = V4L2_MEMORY_MMAP;
 	dev->buffers = NULL;
 	dev->type = (enum v4l2_buf_type)-1;
+}
+
+static int video_open(struct device *dev, const char *devname, int no_query)
+{
+	struct v4l2_capability cap;
+	unsigned int capabilities;
+	int ret;
 
 	dev->fd = open(devname, O_RDWR);
 	if (dev->fd < 0) {
@@ -1598,6 +1601,8 @@ int main(int argc, char *argv[])
 	const char *filename = "frame-#.bin";
 
 	unsigned int rt_priority = 1;
+
+	video_init(&dev);
 
 	opterr = 0;
 	while ((c = getopt_long(argc, argv, "c::Cd:f:F::hi:Iln:pq:r:R::s:t:uw:", opts, NULL)) != -1) {
