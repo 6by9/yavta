@@ -99,14 +99,33 @@ static bool video_is_output(struct device *dev)
 
 static struct {
 	enum v4l2_buf_type type;
+	bool supported;
 	const char *name;
+	const char *string;
 } buf_types[] = {
-	{ V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE, "Video capture mplanes", },
-	{ V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE, "Video output", },
-	{ V4L2_BUF_TYPE_VIDEO_CAPTURE, "Video capture" },
-	{ V4L2_BUF_TYPE_VIDEO_OUTPUT, "Video output mplanes" },
-	{ V4L2_BUF_TYPE_VIDEO_OVERLAY, "Video overlay" },
+	{ V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE, 1, "Video capture mplanes", "capture-mplane", },
+	{ V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE, 1, "Video output", "output-mplane", },
+	{ V4L2_BUF_TYPE_VIDEO_CAPTURE, 1, "Video capture", "capture", },
+	{ V4L2_BUF_TYPE_VIDEO_OUTPUT, 1, "Video output mplanes", "output", },
+	{ V4L2_BUF_TYPE_VIDEO_OVERLAY, 0, "Video overlay", "overlay" },
 };
+
+static int v4l2_buf_type_from_string(const char *str)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(buf_types); i++) {
+		if (!buf_types[i].supported)
+			continue;
+
+		if (strcmp(buf_types[i].string, str))
+			continue;
+
+		return buf_types[i].type;
+	}
+
+	return -1;
+}
 
 static const char *v4l2_buf_type_name(enum v4l2_buf_type type)
 {
@@ -1500,6 +1519,8 @@ static void usage(const char *argv0)
 {
 	printf("Usage: %s [options] device\n", argv0);
 	printf("Supported options:\n");
+	printf("-B, --buffer-type		Buffer type (\"capture\", \"output\",\n");
+	printf("                                \"capture-mplane\" or \"output-mplane\")\n");
 	printf("-c, --capture[=nframes]		Capture frames\n");
 	printf("-C, --check-overrun		Verify dequeued frames for buffer overrun\n");
 	printf("-d, --delay			Delay (in ms) before requeuing buffers\n");
@@ -1541,6 +1562,7 @@ static void usage(const char *argv0)
 #define OPT_STRIDE		263
 
 static struct option opts[] = {
+	{"buffer-type", 1, 0, 'B'},
 	{"capture", 2, 0, 'c'},
 	{"check-overrun", 0, 0, 'C'},
 	{"delay", 1, 0, 'd'},
@@ -1618,9 +1640,17 @@ int main(int argc, char *argv[])
 	video_init(&dev);
 
 	opterr = 0;
-	while ((c = getopt_long(argc, argv, "c::Cd:f:F::hi:Iln:pq:r:R::s:t:uw:", opts, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "B:c::Cd:f:F::hi:Iln:pq:r:R::s:t:uw:", opts, NULL)) != -1) {
 
 		switch (c) {
+		case 'B':
+			ret = v4l2_buf_type_from_string(optarg);
+			if (ret == -1) {
+				printf("Bad buffer type \"%s\"\n", optarg);
+				return 1;
+			}
+			video_set_buf_type(&dev, ret);
+			break;
 		case 'c':
 			do_capture = 1;
 			if (optarg)
@@ -1783,7 +1813,7 @@ int main(int argc, char *argv[])
 	if (ret < 0)
 		return 1;
 
-	if (!video_is_buf_type_valid(&dev))
+	if (!video_has_valid_buf_type(&dev))
 		video_set_buf_type(&dev, ret);
 
 	dev.memtype = memtype;
