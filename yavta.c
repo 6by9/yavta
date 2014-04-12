@@ -721,13 +721,13 @@ static void get_ts_flags(uint32_t flags, const char **ts_type, const char **ts_s
 {
 	switch (flags & V4L2_BUF_FLAG_TIMESTAMP_MASK) {
 	case V4L2_BUF_FLAG_TIMESTAMP_UNKNOWN:
-		*ts_type = "unknown";
+		*ts_type = "unk";
 		break;
 	case V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC:
-		*ts_type = "monotonic";
+		*ts_type = "mono";
 		break;
 	default:
-		*ts_type = "invalid";
+		*ts_type = "inv";
 	}
 	switch (flags & V4L2_BUF_FLAG_TSTAMP_SRC_MASK) {
 	case V4L2_BUF_FLAG_TSTAMP_SRC_EOF:
@@ -737,7 +737,7 @@ static void get_ts_flags(uint32_t flags, const char **ts_type, const char **ts_s
 		*ts_source = "SoE";
 		break;
 	default:
-		*ts_source = "invalid";
+		*ts_source = "inv";
 	}
 }
 
@@ -1490,7 +1490,7 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 
 		clock_gettime(CLOCK_MONOTONIC, &ts);
 		get_ts_flags(buf.flags, &ts_type, &ts_source);
-		printf("%u (%u) [%c] %u %u bytes %ld.%06ld %ld.%06ld %.3f fps ts %s/%s\n", i, buf.index,
+		printf("%u (%u) [%c] %u %u B %ld.%06ld %ld.%06ld %.3f fps ts %s/%s\n", i, buf.index,
 			(buf.flags & V4L2_BUF_FLAG_ERROR) ? 'E' : '-',
 			buf.sequence, buf.bytesused, buf.timestamp.tv_sec,
 			buf.timestamp.tv_usec, ts.tv_sec, ts.tv_nsec/1000, fps,
