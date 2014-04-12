@@ -73,6 +73,7 @@ struct device
 	unsigned int width;
 	unsigned int height;
 	uint32_t buffer_output_flags;
+	uint32_t timestamp_type;
 
 	unsigned char num_planes;
 	struct v4l2_plane_pix_format plane_fmt[VIDEO_MAX_PLANES];
@@ -814,6 +815,7 @@ static int video_alloc_buffers(struct device *dev, int nbufs,
 			return ret;
 	}
 
+	dev->timestamp_type = buf.flags & V4L2_BUF_FLAG_TIMESTAMP_MASK;
 	dev->buffers = buffers;
 	dev->nbufs = rb.count;
 	return 0;
@@ -876,8 +878,16 @@ static int video_queue_buffer(struct device *dev, int index, enum buffer_fill_mo
 	buf.type = dev->type;
 	buf.memory = dev->memtype;
 
-	if (video_is_output(dev))
+	if (video_is_output(dev)) {
 		buf.flags = dev->buffer_output_flags;
+		if (dev->timestamp_type == V4L2_BUF_FLAG_TIMESTAMP_COPY) {
+			struct timespec ts;
+
+			clock_gettime(CLOCK_MONOTONIC, &ts);
+			buf.timestamp.tv_sec = ts.tv_sec;
+			buf.timestamp.tv_usec = ts.tv_nsec / 1000;
+		}
+	}
 
 	if (video_is_mplane(dev)) {
 		buf.m.planes = planes;
