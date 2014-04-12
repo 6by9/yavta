@@ -97,24 +97,24 @@ static bool video_is_output(struct device *dev)
 	       dev->type == V4L2_BUF_TYPE_VIDEO_OUTPUT;
 }
 
+static struct {
+	enum v4l2_buf_type type;
+	const char *name;
+} buf_types[] = {
+	{ V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE, "Video capture mplanes", },
+	{ V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE, "Video output", },
+	{ V4L2_BUF_TYPE_VIDEO_CAPTURE, "Video capture" },
+	{ V4L2_BUF_TYPE_VIDEO_OUTPUT, "Video output mplanes" },
+	{ V4L2_BUF_TYPE_VIDEO_OVERLAY, "Video overlay" },
+};
+
 static const char *v4l2_buf_type_name(enum v4l2_buf_type type)
 {
-	static struct {
-		enum v4l2_buf_type type;
-		const char *name;
-	} names[] = {
-		{ V4L2_BUF_TYPE_VIDEO_CAPTURE, "Video capture" },
-		{ V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE, "Video capture mplanes" },
-		{ V4L2_BUF_TYPE_VIDEO_OUTPUT, "Video output" },
-		{ V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE, "Video output mplanes" },
-		{ V4L2_BUF_TYPE_VIDEO_OVERLAY, "Video overlay" },
-	};
-
 	unsigned int i;
 
-	for (i = 0; i < ARRAY_SIZE(names); ++i) {
-		if (names[i].type == type)
-			return names[i].name;
+	for (i = 0; i < ARRAY_SIZE(buf_types); ++i) {
+		if (buf_types[i].type == type)
+			return buf_types[i].name;
 	}
 
 	if (type & V4L2_BUF_TYPE_PRIVATE)
