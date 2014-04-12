@@ -220,6 +220,16 @@ static const char *v4l2_format_name(unsigned int fourcc)
 	return name;
 }
 
+static void video_set_buf_type(struct device *dev, enum v4l2_buf_type type)
+{
+	dev->type = type;
+}
+
+static bool video_has_valid_buf_type(struct device *dev)
+{
+	return (int)dev->type != -1;
+}
+
 static void video_init(struct device *dev)
 {
 	memset(dev, 0, sizeof *dev);
