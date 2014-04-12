@@ -726,6 +726,9 @@ static void get_ts_flags(uint32_t flags, const char **ts_type, const char **ts_s
 	case V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC:
 		*ts_type = "mono";
 		break;
+	case V4L2_BUF_FLAG_TIMESTAMP_COPY:
+		*ts_type = "copy";
+		break;
 	default:
 		*ts_type = "inv";
 	}
