@@ -242,6 +242,46 @@ static const char *v4l2_format_name(unsigned int fourcc)
 	return name;
 }
 
+static const struct {
+	const char *name;
+	enum v4l2_field field;
+} fields[] = {
+	{ "any", V4L2_FIELD_ANY },
+	{ "none", V4L2_FIELD_NONE },
+	{ "top", V4L2_FIELD_TOP },
+	{ "bottom", V4L2_FIELD_BOTTOM },
+	{ "interlaced", V4L2_FIELD_INTERLACED },
+	{ "seq-tb", V4L2_FIELD_SEQ_TB },
+	{ "seq-bt", V4L2_FIELD_SEQ_BT },
+	{ "alternate", V4L2_FIELD_ALTERNATE },
+	{ "interlaced-tb", V4L2_FIELD_INTERLACED_TB },
+	{ "interlaced-bt", V4L2_FIELD_INTERLACED_BT },
+};
+
+static enum v4l2_field v4l2_field_from_string(const char *name)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(fields); ++i) {
+		if (strcasecmp(fields[i].name, name) == 0)
+			return fields[i].field;
+	}
+
+	return -1;
+}
+
+static const char *v4l2_field_name(enum v4l2_field field)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(fields); ++i) {
+		if (fields[i].field == field)
+			return fields[i].name;
+	}
+
+	return "unknown";
+}
+
 static void video_set_buf_type(struct device *dev, enum v4l2_buf_type type)
 {
 	dev->type = type;
@@ -474,9 +514,11 @@ static int video_get_format(struct device *dev)
 		dev->height = fmt.fmt.pix_mp.height;
 		dev->num_planes = fmt.fmt.pix_mp.num_planes;
 
-		printf("Video format: %s (%08x) %ux%u, %u planes: \n",
+		printf("Video format: %s (%08x) %ux%u field %s, %u planes: \n",
 			v4l2_format_name(fmt.fmt.pix_mp.pixelformat), fmt.fmt.pix_mp.pixelformat,
-			fmt.fmt.pix_mp.width, fmt.fmt.pix_mp.height, fmt.fmt.pix_mp.num_planes);
+			fmt.fmt.pix_mp.width, fmt.fmt.pix_mp.height,
+			v4l2_field_name(fmt.fmt.pix_mp.field),
+			fmt.fmt.pix_mp.num_planes);
 
 		for (i = 0; i < fmt.fmt.pix_mp.num_planes; i++) {
 			dev->plane_fmt[i].bytesperline =
@@ -497,9 +539,10 @@ static int video_get_format(struct device *dev)
 		dev->plane_fmt[0].bytesperline = fmt.fmt.pix.bytesperline;
 		dev->plane_fmt[0].sizeimage = fmt.fmt.pix.bytesperline ? fmt.fmt.pix.sizeimage : 0;
 
-		printf("Video format: %s (%08x) %ux%u (stride %u) buffer size %u\n",
+		printf("Video format: %s (%08x) %ux%u (stride %u) field %s buffer size %u\n",
 			v4l2_format_name(fmt.fmt.pix.pixelformat), fmt.fmt.pix.pixelformat,
 			fmt.fmt.pix.width, fmt.fmt.pix.height, fmt.fmt.pix.bytesperline,
+			v4l2_field_name(fmt.fmt.pix_mp.field),
 			fmt.fmt.pix.sizeimage);
 	}
 
@@ -507,7 +550,8 @@ static int video_get_format(struct device *dev)
 }
 
 static int video_set_format(struct device *dev, unsigned int w, unsigned int h,
-			    unsigned int format, unsigned int stride)
+			    unsigned int format, unsigned int stride,
+			    enum v4l2_field field)
 {
 	struct v4l2_format fmt;
 	unsigned int i;
@@ -522,7 +566,7 @@ static int video_set_format(struct device *dev, unsigned int w, unsigned int h,
 		fmt.fmt.pix_mp.width = w;
 		fmt.fmt.pix_mp.height = h;
 		fmt.fmt.pix_mp.pixelformat = format;
-		fmt.fmt.pix_mp.field = V4L2_FIELD_ANY;
+		fmt.fmt.pix_mp.field = field;
 		fmt.fmt.pix_mp.num_planes = info->n_planes;
 
 		for (i = 0; i < fmt.fmt.pix_mp.num_planes; i++)
@@ -531,7 +575,7 @@ static int video_set_format(struct device *dev, unsigned int w, unsigned int h,
 		fmt.fmt.pix.width = w;
 		fmt.fmt.pix.height = h;
 		fmt.fmt.pix.pixelformat = format;
-		fmt.fmt.pix.field = V4L2_FIELD_ANY;
+		fmt.fmt.pix.field = field;
 		fmt.fmt.pix.bytesperline = stride;
 	}
 
@@ -543,9 +587,11 @@ static int video_set_format(struct device *dev, unsigned int w, unsigned int h,
 	}
 
 	if (video_is_mplane(dev)) {
-		printf("Video format: %s (%08x) %ux%u, %u planes: \n",
+		printf("Video format set: %s (%08x) %ux%u field %s, %u planes: \n",
 			v4l2_format_name(fmt.fmt.pix_mp.pixelformat), fmt.fmt.pix_mp.pixelformat,
-			fmt.fmt.pix_mp.width, fmt.fmt.pix_mp.height, fmt.fmt.pix_mp.num_planes);
+			fmt.fmt.pix_mp.width, fmt.fmt.pix_mp.height,
+			v4l2_field_name(fmt.fmt.pix_mp.field),
+			fmt.fmt.pix_mp.num_planes);
 
 		for (i = 0; i < fmt.fmt.pix_mp.num_planes; i++) {
 			printf(" * Stride %u, buffer size %u\n",
@@ -553,9 +599,10 @@ static int video_set_format(struct device *dev, unsigned int w, unsigned int h,
 				fmt.fmt.pix_mp.plane_fmt[i].sizeimage);
 		}
 	} else {
-		printf("Video format set: %s (%08x) %ux%u (stride %u) buffer size %u\n",
+		printf("Video format set: %s (%08x) %ux%u (stride %u) field %s buffer size %u\n",
 			v4l2_format_name(fmt.fmt.pix.pixelformat), fmt.fmt.pix.pixelformat,
 			fmt.fmt.pix.width, fmt.fmt.pix.height, fmt.fmt.pix.bytesperline,
+			v4l2_field_name(fmt.fmt.pix.field),
 			fmt.fmt.pix.sizeimage);
 	}
 
@@ -1503,8 +1550,9 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 
 		clock_gettime(CLOCK_MONOTONIC, &ts);
 		get_ts_flags(buf.flags, &ts_type, &ts_source);
-		printf("%u (%u) [%c] %u %u B %ld.%06ld %ld.%06ld %.3f fps ts %s/%s\n", i, buf.index,
+		printf("%u (%u) [%c] %s %u %u B %ld.%06ld %ld.%06ld %.3f fps ts %s/%s\n", i, buf.index,
 			(buf.flags & V4L2_BUF_FLAG_ERROR) ? 'E' : '-',
+			v4l2_field_name(buf.field),
 			buf.sequence, buf.bytesused, buf.timestamp.tv_sec,
 			buf.timestamp.tv_usec, ts.tv_sec, ts.tv_nsec/1000, fps,
 			ts_type, ts_source);
@@ -1596,6 +1644,7 @@ static void usage(const char *argv0)
 	printf("    --enum-formats		Enumerate formats\n");
 	printf("    --enum-inputs		Enumerate inputs\n");
 	printf("    --fd                        Use a numeric file descriptor insted of a device\n");
+	printf("    --field			Interlaced format field order\n");
 	printf("    --no-query			Don't query capabilities on open\n");
 	printf("    --offset			User pointer buffer offset from page start\n");
 	printf("    --requeue-last		Requeue the last buffers before streamoff\n");
@@ -1615,6 +1664,7 @@ static void usage(const char *argv0)
 #define OPT_STRIDE		263
 #define OPT_FD			264
 #define OPT_TSTAMP_SRC		265
+#define OPT_FIELD		266
 
 static struct option opts[] = {
 	{"buffer-type", 1, 0, 'B'},
@@ -1624,6 +1674,7 @@ static struct option opts[] = {
 	{"enum-formats", 0, 0, OPT_ENUM_FORMATS},
 	{"enum-inputs", 0, 0, OPT_ENUM_INPUTS},
 	{"fd", 1, 0, OPT_FD},
+	{"field", 1, 0, OPT_FIELD},
 	{"file", 2, 0, 'F'},
 	{"fill-frames", 0, 0, 'I'},
 	{"format", 1, 0, 'f'},
@@ -1686,6 +1737,7 @@ int main(int argc, char *argv[])
 	unsigned int quality = (unsigned int)-1;
 	unsigned int userptr_offset = 0;
 	struct v4l2_fract time_per_frame = {1, 25};
+	enum v4l2_field field = V4L2_FIELD_ANY;
 
 	/* Capture loop */
 	enum buffer_fill_mode fill_mode = BUFFER_FILL_NONE;
@@ -1827,6 +1879,13 @@ int main(int argc, char *argv[])
 			printf("Using file descriptor %d\n", ret);
 			video_set_fd(&dev, ret);
 			break;
+		case OPT_FIELD:
+			field = v4l2_field_from_string(optarg);
+			if (field == (enum v4l2_field)-1) {
+				printf("Invalid field order '%s'\n", optarg);
+				return 1;
+			}
+			break;
 		case OPT_NO_QUERY:
 			no_query = 1;
 			break;
@@ -1932,7 +1991,7 @@ int main(int argc, char *argv[])
 
 	/* Set the video format. */
 	if (do_set_format) {
-		if (video_set_format(&dev, width, height, pixelformat, stride) < 0) {
+		if (video_set_format(&dev, width, height, pixelformat, stride, field) < 0) {
 			video_close(&dev);
 			return 1;
 		}
