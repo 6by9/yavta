@@ -394,70 +394,82 @@ static void video_log_status(struct device *dev)
 	ioctl(dev->fd, VIDIOC_LOG_STATUS);
 }
 
-static unsigned int get_control_type(struct device *dev, unsigned int id)
+static int query_control(struct device *dev, unsigned int id,
+			 struct v4l2_queryctrl *query)
 {
-	struct v4l2_queryctrl query;
 	int ret;
 
-	memset(&query, 0, sizeof(query));
+	memset(query, 0, sizeof(*query));
+	query->id = id;
 
-	query.id = id;
-	ret = ioctl(dev->fd, VIDIOC_QUERYCTRL, &query);
-	if (ret == -1)
-		return V4L2_CTRL_TYPE_INTEGER;
+	ret = ioctl(dev->fd, VIDIOC_QUERYCTRL, query);
+	if (ret < 0 && errno != EINVAL)
+		printf("unable to query control 0x%8.8x: %s (%d).\n",
+		       id, strerror(errno), errno);
 
-	return query.type;
+	return ret;
 }
 
-static int get_control(struct device *dev, unsigned int id, int type,
-		       int64_t *val)
+static int get_control(struct device *dev, const struct v4l2_queryctrl *query,
+		       struct v4l2_ext_control *ctrl)
 {
 	struct v4l2_ext_controls ctrls;
-	struct v4l2_ext_control ctrl;
 	int ret;
 
 	memset(&ctrls, 0, sizeof(ctrls));
-	memset(&ctrl, 0, sizeof(ctrl));
+	memset(ctrl, 0, sizeof(*ctrl));
 
-	ctrls.ctrl_class = V4L2_CTRL_ID2CLASS(id);
+	ctrls.ctrl_class = V4L2_CTRL_ID2CLASS(query->id);
 	ctrls.count = 1;
-	ctrls.controls = &ctrl;
+	ctrls.controls = ctrl;
 
-	ctrl.id = id;
+	ctrl->id = query->id;
+
+	if (query->type == V4L2_CTRL_TYPE_STRING) {
+		ctrl->string = malloc(query->maximum + 1);
+		if (ctrl->string == NULL)
+			return -ENOMEM;
+
+		ctrl->size = query->maximum + 1;
+	}
 
 	ret = ioctl(dev->fd, VIDIOC_G_EXT_CTRLS, &ctrls);
-	if (ret != -1) {
-		if (type == V4L2_CTRL_TYPE_INTEGER64)
-			*val = ctrl.value64;
-		else
-			*val = ctrl.value;
+	if (ret != -1)
 		return 0;
-	}
-	if (type != V4L2_CTRL_TYPE_INTEGER64 && type != V4L2_CTRL_TYPE_STRING &&
+
+	if (query->type != V4L2_CTRL_TYPE_INTEGER64 &&
+	    query->type != V4L2_CTRL_TYPE_STRING &&
 	    (errno == EINVAL || errno == ENOTTY)) {
 		struct v4l2_control old;
 
-		old.id = id;
+		old.id = query->id;
 		ret = ioctl(dev->fd, VIDIOC_G_CTRL, &old);
 		if (ret != -1) {
-			*val = old.value;
+			ctrl->value = old.value;
 			return 0;
 		}
 	}
 
 	printf("unable to get control 0x%8.8x: %s (%d).\n",
-		id, strerror(errno), errno);
+		query->id, strerror(errno), errno);
 	return -1;
 }
 
-static void set_control(struct device *dev, unsigned int id, int type,
+static void set_control(struct device *dev, unsigned int id,
 		        int64_t val)
 {
 	struct v4l2_ext_controls ctrls;
 	struct v4l2_ext_control ctrl;
-	int is_64 = type == V4L2_CTRL_TYPE_INTEGER64;
+	struct v4l2_queryctrl query;
 	int64_t old_val = val;
+	int is_64;
 	int ret;
+
+	ret = query_control(dev, id, &query);
+	if (ret < 0)
+		return;
+
+	is_64 = query.type == V4L2_CTRL_TYPE_INTEGER64;
 
 	memset(&ctrls, 0, sizeof(ctrls));
 	memset(&ctrl, 0, sizeof(ctrl));
@@ -478,7 +490,7 @@ static void set_control(struct device *dev, unsigned int id, int type,
 			val = ctrl.value64;
 		else
 			val = ctrl.value;
-	} else if (!is_64 && type != V4L2_CTRL_TYPE_STRING &&
+	} else if (!is_64 && query.type != V4L2_CTRL_TYPE_STRING &&
 		   (errno == EINVAL || errno == ENOTTY)) {
 		struct v4l2_control old;
 
@@ -1022,50 +1034,78 @@ static void video_query_menu(struct device *dev, struct v4l2_queryctrl *query,
 	};
 }
 
+static int video_print_control(struct device *dev, unsigned int id, bool full)
+{
+	struct v4l2_ext_control ctrl;
+	struct v4l2_queryctrl query;
+	char sval[24];
+	char *current = sval;
+	int ret;
+
+	ret = query_control(dev, id, &query);
+	if (ret < 0)
+		return ret;
+
+	if (query.flags & V4L2_CTRL_FLAG_DISABLED)
+		return query.id;
+
+	if (query.type == V4L2_CTRL_TYPE_CTRL_CLASS) {
+		printf("--- %s (class 0x%08x) ---\n", query.name, query.id);
+		return query.id;
+	}
+
+	ret = get_control(dev, &query, &ctrl);
+	if (ret < 0)
+		strcpy(sval, "n/a");
+	else if (query.type == V4L2_CTRL_TYPE_INTEGER64)
+		sprintf(sval, "%lld", ctrl.value64);
+	else if (query.type == V4L2_CTRL_TYPE_STRING)
+		current = ctrl.string;
+	else
+		sprintf(sval, "%d", ctrl.value);
+
+	if (full)
+		printf("control 0x%08x `%s' min %d max %d step %d default %d current %s.\n",
+			query.id, query.name, query.minimum, query.maximum,
+			query.step, query.default_value, current);
+	else
+		printf("control 0x%08x current %s.\n", query.id, current);
+
+	if (query.type == V4L2_CTRL_TYPE_STRING)
+		free(ctrl.string);
+
+	if (!full)
+		return query.id;
+
+	if (query.type == V4L2_CTRL_TYPE_MENU ||
+	    query.type == V4L2_CTRL_TYPE_INTEGER_MENU)
+		video_query_menu(dev, &query, ctrl.value);
+
+	return query.id;
+}
+
 static void video_list_controls(struct device *dev)
 {
-	struct v4l2_queryctrl query;
 	unsigned int nctrls = 0;
-	char value[24];
-	int64_t val64;
+	unsigned int id;
 	int ret;
 
 #ifndef V4L2_CTRL_FLAG_NEXT_CTRL
 	unsigned int i;
 
 	for (i = V4L2_CID_BASE; i <= V4L2_CID_LASTP1; ++i) {
-		query.id = i;
+		id = i;
 #else
-	query.id = 0;
+	id = 0;
 	while (1) {
-		query.id |= V4L2_CTRL_FLAG_NEXT_CTRL;
+		id |= V4L2_CTRL_FLAG_NEXT_CTRL;
 #endif
-		ret = ioctl(dev->fd, VIDIOC_QUERYCTRL, &query);
+
+		ret = video_print_control(dev, id, true);
 		if (ret < 0)
 			break;
 
-		if (query.flags & V4L2_CTRL_FLAG_DISABLED)
-			continue;
-
-		if (query.type == V4L2_CTRL_TYPE_CTRL_CLASS) {
-			printf("--- %s (class 0x%08x) ---\n", query.name, query.id);
-			continue;
-		}
-
-		ret = get_control(dev, query.id, query.type, &val64);
-		if (ret < 0)
-			strcpy(value, "n/a");
-		else
-			sprintf(value, "%" PRId64, val64);
-
-		printf("control 0x%08x `%s' min %d max %d step %d default %d current %s.\n",
-			query.id, query.name, query.minimum, query.maximum,
-			query.step, query.default_value, value);
-
-		if (query.type == V4L2_CTRL_TYPE_MENU ||
-		    query.type == V4L2_CTRL_TYPE_INTEGER_MENU)
-			video_query_menu(dev, &query, val64);
-
+		id = ret;
 		nctrls++;
 	}
 
@@ -1968,17 +2008,11 @@ int main(int argc, char *argv[])
 	if (do_log_status)
 		video_log_status(&dev);
 
-	if (do_get_control) {
-		int64_t val;
-		ret = get_control(&dev, ctrl_name,
-				  get_control_type(&dev, ctrl_name), &val);
-		if (ret >= 0)
-			printf("Control 0x%08x value %" PRId64 "\n", ctrl_name, val);
-	}
+	if (do_get_control)
+		video_print_control(&dev, ctrl_name, false);
 
 	if (do_set_control)
-		set_control(&dev, ctrl_name, get_control_type(&dev, ctrl_name),
-			    ctrl_value);
+		set_control(&dev, ctrl_name, ctrl_value);
 
 	if (do_list_controls)
 		video_list_controls(&dev);
