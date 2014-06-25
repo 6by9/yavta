@@ -578,7 +578,8 @@ static int video_get_format(struct device *dev)
 
 static int video_set_format(struct device *dev, unsigned int w, unsigned int h,
 			    unsigned int format, unsigned int stride,
-			    unsigned int buffer_size, enum v4l2_field field)
+			    unsigned int buffer_size, enum v4l2_field field,
+			    unsigned int flags)
 {
 	struct v4l2_format fmt;
 	unsigned int i;
@@ -595,6 +596,7 @@ static int video_set_format(struct device *dev, unsigned int w, unsigned int h,
 		fmt.fmt.pix_mp.pixelformat = format;
 		fmt.fmt.pix_mp.field = field;
 		fmt.fmt.pix_mp.num_planes = info->n_planes;
+		fmt.fmt.pix_mp.flags = flags;
 
 		for (i = 0; i < fmt.fmt.pix_mp.num_planes; i++) {
 			fmt.fmt.pix_mp.plane_fmt[i].bytesperline = stride;
@@ -607,6 +609,8 @@ static int video_set_format(struct device *dev, unsigned int w, unsigned int h,
 		fmt.fmt.pix.field = field;
 		fmt.fmt.pix.bytesperline = stride;
 		fmt.fmt.pix.sizeimage = buffer_size;
+		fmt.fmt.pix.priv = V4L2_PIX_FMT_PRIV_MAGIC;
+		fmt.fmt.pix.flags = flags;
 	}
 
 	ret = ioctl(dev->fd, VIDIOC_S_FMT, &fmt);
@@ -1707,6 +1711,7 @@ static void usage(const char *argv0)
 	printf("    --log-status		Log device status\n");
 	printf("    --no-query			Don't query capabilities on open\n");
 	printf("    --offset			User pointer buffer offset from page start\n");
+	printf("    --premultiplied		Color components are premultiplied by alpha value\n");
 	printf("    --requeue-last		Requeue the last buffers before streamoff\n");
 	printf("    --timestamp-source		Set timestamp source on output buffers [eof, soe]\n");
 	printf("    --skip n			Skip the first n frames\n");
@@ -1727,6 +1732,7 @@ static void usage(const char *argv0)
 #define OPT_FIELD		266
 #define OPT_LOG_STATUS		267
 #define OPT_BUFFER_SIZE		268
+#define OPT_PREMULTIPLIED	269
 
 static struct option opts[] = {
 	{"buffer-size", 1, 0, OPT_BUFFER_SIZE},
@@ -1749,6 +1755,7 @@ static struct option opts[] = {
 	{"no-query", 0, 0, OPT_NO_QUERY},
 	{"offset", 1, 0, OPT_USERPTR_OFFSET},
 	{"pause", 0, 0, 'p'},
+	{"premultiplied", 0, 0, OPT_PREMULTIPLIED},
 	{"quality", 1, 0, 'q'},
 	{"get-control", 1, 0, 'r'},
 	{"requeue-last", 0, 0, OPT_REQUEUE_LAST},
@@ -1792,6 +1799,7 @@ int main(int argc, char *argv[])
 	/* Video buffers */
 	enum v4l2_memory memtype = V4L2_MEMORY_MMAP;
 	unsigned int pixelformat = V4L2_PIX_FMT_YUYV;
+	unsigned int fmt_flags = 0;
 	unsigned int width = 640;
 	unsigned int height = 480;
 	unsigned int stride = 0;
@@ -1960,6 +1968,9 @@ int main(int argc, char *argv[])
 		case OPT_NO_QUERY:
 			no_query = 1;
 			break;
+		case OPT_PREMULTIPLIED:
+			fmt_flags |= V4L2_PIX_FMT_FLAG_PREMUL_ALPHA;
+			break;
 		case OPT_REQUEUE_LAST:
 			do_requeue_last = 1;
 			break;
@@ -2060,7 +2071,7 @@ int main(int argc, char *argv[])
 	/* Set the video format. */
 	if (do_set_format) {
 		if (video_set_format(&dev, width, height, pixelformat, stride,
-				     buffer_size, field) < 0) {
+				     buffer_size, field, fmt_flags) < 0) {
 			video_close(&dev);
 			return 1;
 		}
