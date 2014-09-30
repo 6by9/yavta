@@ -578,7 +578,7 @@ static int video_get_format(struct device *dev)
 
 static int video_set_format(struct device *dev, unsigned int w, unsigned int h,
 			    unsigned int format, unsigned int stride,
-			    enum v4l2_field field)
+			    unsigned int buffer_size, enum v4l2_field field)
 {
 	struct v4l2_format fmt;
 	unsigned int i;
@@ -596,14 +596,17 @@ static int video_set_format(struct device *dev, unsigned int w, unsigned int h,
 		fmt.fmt.pix_mp.field = field;
 		fmt.fmt.pix_mp.num_planes = info->n_planes;
 
-		for (i = 0; i < fmt.fmt.pix_mp.num_planes; i++)
+		for (i = 0; i < fmt.fmt.pix_mp.num_planes; i++) {
 			fmt.fmt.pix_mp.plane_fmt[i].bytesperline = stride;
+			fmt.fmt.pix_mp.plane_fmt[i].sizeimage = buffer_size;
+		}
 	} else {
 		fmt.fmt.pix.width = w;
 		fmt.fmt.pix.height = h;
 		fmt.fmt.pix.pixelformat = format;
 		fmt.fmt.pix.field = field;
 		fmt.fmt.pix.bytesperline = stride;
+		fmt.fmt.pix.sizeimage = buffer_size;
 	}
 
 	ret = ioctl(dev->fd, VIDIOC_S_FMT, &fmt);
@@ -1696,6 +1699,7 @@ static void usage(const char *argv0)
 	printf("-t, --time-per-frame num/denom	Set the time per frame (eg. 1/25 = 25 fps)\n");
 	printf("-u, --userptr			Use the user pointers streaming method\n");
 	printf("-w, --set-control 'ctrl value'	Set control 'ctrl' to 'value'\n");
+	printf("    --buffer-size		Buffer size in bytes\n");
 	printf("    --enum-formats		Enumerate formats\n");
 	printf("    --enum-inputs		Enumerate inputs\n");
 	printf("    --fd                        Use a numeric file descriptor insted of a device\n");
@@ -1722,8 +1726,10 @@ static void usage(const char *argv0)
 #define OPT_TSTAMP_SRC		265
 #define OPT_FIELD		266
 #define OPT_LOG_STATUS		267
+#define OPT_BUFFER_SIZE		268
 
 static struct option opts[] = {
+	{"buffer-size", 1, 0, OPT_BUFFER_SIZE},
 	{"buffer-type", 1, 0, 'B'},
 	{"capture", 2, 0, 'c'},
 	{"check-overrun", 0, 0, 'C'},
@@ -1789,6 +1795,7 @@ int main(int argc, char *argv[])
 	unsigned int width = 640;
 	unsigned int height = 480;
 	unsigned int stride = 0;
+	unsigned int buffer_size = 0;
 	unsigned int nbufs = V4L_BUFFERS_DEFAULT;
 	unsigned int input = 0;
 	unsigned int skip = 0;
@@ -1922,6 +1929,9 @@ int main(int argc, char *argv[])
 			}
 			do_set_control = 1;
 			break;
+		case OPT_BUFFER_SIZE:
+			buffer_size = atoi(optarg);
+			break;
 		case OPT_ENUM_FORMATS:
 			do_enum_formats = 1;
 			break;
@@ -2049,7 +2059,8 @@ int main(int argc, char *argv[])
 
 	/* Set the video format. */
 	if (do_set_format) {
-		if (video_set_format(&dev, width, height, pixelformat, stride, field) < 0) {
+		if (video_set_format(&dev, width, height, pixelformat, stride,
+				     buffer_size, field) < 0) {
 			video_close(&dev);
 			return 1;
 		}
