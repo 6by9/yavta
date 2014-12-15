@@ -80,6 +80,8 @@ struct device
 
 	void *pattern[VIDEO_MAX_PLANES];
 	unsigned int patternsize[VIDEO_MAX_PLANES];
+
+	bool write_buffer_prefix;
 };
 
 static bool video_is_mplane(struct device *dev)
@@ -1544,14 +1546,22 @@ static void video_save_image(struct device *dev, struct v4l2_buffer *buf,
 		return;
 
 	for (i = 0; i < dev->num_planes; i++) {
+		void *data = dev->buffers[buf->index].mem[i];
 		unsigned int length;
 
-		if (video_is_mplane(dev))
+		if (video_is_mplane(dev)) {
 			length = buf->m.planes[i].bytesused;
-		else
-			length = buf->bytesused;
 
-		ret = write(fd, dev->buffers[buf->index].mem[i], length);
+			if (!dev->write_buffer_prefix) {
+				data += buf->m.planes[i].data_offset;
+				length -= buf->m.planes[i].data_offset;
+			}
+
+		} else {
+			length = buf->bytesused;
+		}
+
+		ret = write(fd, data, length);
 		if (ret < 0) {
 			printf("write error: %s (%d)\n", strerror(errno), errno);
 			break;
@@ -1716,6 +1726,7 @@ static void usage(const char *argv0)
 	printf("-t, --time-per-frame num/denom	Set the time per frame (eg. 1/25 = 25 fps)\n");
 	printf("-u, --userptr			Use the user pointers streaming method\n");
 	printf("-w, --set-control 'ctrl value'	Set control 'ctrl' to 'value'\n");
+	printf("    --buffer-prefix		Write portions of buffer before data_offset\n");
 	printf("    --buffer-size		Buffer size in bytes\n");
 	printf("    --enum-formats		Enumerate formats\n");
 	printf("    --enum-inputs		Enumerate inputs\n");
@@ -1748,10 +1759,12 @@ static void usage(const char *argv0)
 #define OPT_BUFFER_SIZE		268
 #define OPT_PREMULTIPLIED	269
 #define OPT_QUEUE_LATE		270
+#define OPT_BUFFER_PREFIX	271
 
 static struct option opts[] = {
 	{"buffer-size", 1, 0, OPT_BUFFER_SIZE},
 	{"buffer-type", 1, 0, 'B'},
+	{"buffer-prefix", 1, 0, OPT_BUFFER_PREFIX},
 	{"capture", 2, 0, 'c'},
 	{"check-overrun", 0, 0, 'C'},
 	{"delay", 1, 0, 'd'},
@@ -2015,6 +2028,8 @@ int main(int argc, char *argv[])
 		case OPT_USERPTR_OFFSET:
 			userptr_offset = atoi(optarg);
 			break;
+		case OPT_BUFFER_PREFIX:
+			dev.write_buffer_prefix = true;
 		default:
 			printf("Invalid option -%c\n", c);
 			printf("Run %s -h for help.\n", argv[0]);
