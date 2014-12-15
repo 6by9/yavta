@@ -973,16 +973,19 @@ static int video_queue_buffer(struct device *dev, int index, enum buffer_fill_mo
 	if (video_is_mplane(dev)) {
 		buf.m.planes = planes;
 		buf.length = dev->num_planes;
-	} else {
-		buf.length = dev->buffers[index].size[0];
 	}
 
 	if (dev->memtype == V4L2_MEMORY_USERPTR) {
 		if (video_is_mplane(dev)) {
-			for (i = 0; i < dev->num_planes; i++)
-				buf.m.planes[i].m.userptr = (unsigned long)dev->buffers[index].mem[i];
+			for (i = 0; i < dev->num_planes; i++) {
+				buf.m.planes[i].m.userptr = (unsigned long)
+					dev->buffers[index].mem[i];
+				buf.m.planes[i].length =
+					dev->buffers[index].size[i];
+			}
 		} else {
 			buf.m.userptr = (unsigned long)dev->buffers[index].mem[0];
+			buf.length = dev->buffers[index].size[0];
 		}
 	}
 
