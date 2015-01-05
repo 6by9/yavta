@@ -1770,7 +1770,7 @@ static struct option opts[] = {
 	{"buffer-type", 1, 0, 'B'},
 	{"capture", 2, 0, 'c'},
 	{"check-overrun", 0, 0, 'C'},
-	{"data-prefix", 1, 0, OPT_DATA_PREFIX},
+	{"data-prefix", 0, 0, OPT_DATA_PREFIX},
 	{"delay", 1, 0, 'd'},
 	{"enum-formats", 0, 0, OPT_ENUM_FORMATS},
 	{"enum-inputs", 0, 0, OPT_ENUM_INPUTS},
@@ -2034,6 +2034,7 @@ int main(int argc, char *argv[])
 			break;
 		case OPT_DATA_PREFIX:
 			dev.write_data_prefix = true;
+			break;
 		default:
 			printf("Invalid option -%c\n", c);
 			printf("Run %s -h for help.\n", argv[0]);
