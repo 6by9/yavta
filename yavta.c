@@ -1576,6 +1576,20 @@ static void video_save_image(struct device *dev, struct v4l2_buffer *buf,
 	close(fd);
 }
 
+unsigned int video_buffer_bytes_used(struct device *dev, struct v4l2_buffer *buf)
+{
+	unsigned int bytesused = 0;
+	unsigned int i;
+
+	if (!video_is_mplane(dev))
+		return buf->bytesused;
+
+	for (i = 0; i < dev->num_planes; i++)
+		bytesused += buf->m.planes[i].bytesused;
+
+	return bytesused;
+}
+
 static int video_do_capture(struct device *dev, unsigned int nframes,
 	unsigned int skip, unsigned int delay, const char *pattern,
 	int do_requeue_last, int do_queue_late, enum buffer_fill_mode fill)
@@ -1642,8 +1656,9 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 		printf("%u (%u) [%c] %s %u %u B %ld.%06ld %ld.%06ld %.3f fps ts %s/%s\n", i, buf.index,
 			(buf.flags & V4L2_BUF_FLAG_ERROR) ? 'E' : '-',
 			v4l2_field_name(buf.field),
-			buf.sequence, buf.bytesused, buf.timestamp.tv_sec,
-			buf.timestamp.tv_usec, ts.tv_sec, ts.tv_nsec/1000, fps,
+			buf.sequence, video_buffer_bytes_used(dev, &buf),
+			buf.timestamp.tv_sec, buf.timestamp.tv_usec,
+			ts.tv_sec, ts.tv_nsec/1000, fps,
 			ts_type, ts_source);
 
 		last = buf.timestamp;
