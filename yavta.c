@@ -358,6 +358,7 @@ static int video_open(struct device *dev, const char *devname)
 static int video_querycap(struct device *dev, unsigned int *capabilities)
 {
 	struct v4l2_capability cap;
+	unsigned int caps;
 	int ret;
 
 	memset(&cap, 0, sizeof cap);
@@ -365,13 +366,16 @@ static int video_querycap(struct device *dev, unsigned int *capabilities)
 	if (ret < 0)
 		return 0;
 
-	*capabilities = cap.capabilities & V4L2_CAP_DEVICE_CAPS
-		     ? cap.device_caps : cap.capabilities;
+	caps = cap.capabilities & V4L2_CAP_DEVICE_CAPS
+	     ? cap.device_caps : cap.capabilities;
 
 	printf("Device `%s' on `%s' is a video %s (%s mplanes) device.\n",
 		cap.card, cap.bus_info,
-		video_is_capture(dev) ? "capture" : "output",
-		video_is_mplane(dev) ? "with" : "without");
+		caps & (V4L2_CAP_VIDEO_CAPTURE_MPLANE | V4L2_CAP_VIDEO_CAPTURE) ? "capture" : "output",
+		caps & (V4L2_CAP_VIDEO_CAPTURE_MPLANE | V4L2_CAP_VIDEO_OUTPUT_MPLANE) ? "with" : "without");
+
+	*capabilities = caps;
+
 	return 0;
 }
 
