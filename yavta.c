@@ -965,6 +965,8 @@ static int video_queue_buffer(struct device *dev, int index, enum buffer_fill_mo
 	unsigned int i;
 
 	memset(&buf, 0, sizeof buf);
+	memset(&planes, 0, sizeof planes);
+
 	buf.index = index;
 	buf.type = dev->type;
 	buf.memory = dev->memtype;
