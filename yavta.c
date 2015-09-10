@@ -215,6 +215,20 @@ static struct v4l2_format_info {
 	{ "MPEG", V4L2_PIX_FMT_MPEG, 1 },
 };
 
+static void list_formats(void)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(pixel_formats); i++)
+		printf("%s (\"%c%c%c%c\", %u planes)\n",
+		       pixel_formats[i].name,
+		       pixel_formats[i].fourcc & 0xff,
+		       (pixel_formats[i].fourcc >> 8) & 0xff,
+		       (pixel_formats[i].fourcc >> 16) & 0xff,
+		       (pixel_formats[i].fourcc >> 24) & 0xff,
+		       pixel_formats[i].n_planes);
+}
+
 static const struct v4l2_format_info *v4l2_format_by_fourcc(unsigned int fourcc)
 {
 	unsigned int i;
@@ -1734,6 +1748,7 @@ static void usage(const char *argv0)
 	printf("-C, --check-overrun		Verify dequeued frames for buffer overrun\n");
 	printf("-d, --delay			Delay (in ms) before requeuing buffers\n");
 	printf("-f, --format format		Set the video format\n");
+	printf("				use -f help to list the supported formats\n");
 	printf("-F, --file[=name]		Read/write frames from/to disk\n");
 	printf("\tFor video capture devices, the first '#' character in the file name is\n");
 	printf("\texpanded to the frame sequence number. The default file name is\n");
@@ -1899,6 +1914,10 @@ int main(int argc, char *argv[])
 			delay = atoi(optarg);
 			break;
 		case 'f':
+			if (!strcmp("help", optarg)) {
+				list_formats();
+				return 0;
+			}
 			do_set_format = 1;
 			info = v4l2_format_by_name(optarg);
 			if (info == NULL) {
