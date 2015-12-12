@@ -1715,8 +1715,10 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 		goto done;
 	}
 
-	if (ts.tv_sec == start.tv_sec && ts.tv_nsec == start.tv_nsec)
+	if (ts.tv_sec == start.tv_sec && ts.tv_nsec == start.tv_nsec) {
+		printf("Captured %u frames (%u bytes) 0 seconds\n", i, size);
 		goto done;
+	}
 
 	ts.tv_sec -= start.tv_sec;
 	ts.tv_nsec -= start.tv_nsec;
