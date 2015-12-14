@@ -1708,7 +1708,9 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 	}
 
 	/* Stop streaming. */
-	video_enable(dev, 0);
+	ret = video_enable(dev, 0);
+	if (ret < 0)
+		return ret;
 
 	if (nframes == 0) {
 		printf("No frames captured.\n");
