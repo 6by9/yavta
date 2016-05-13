@@ -383,8 +383,8 @@ static int video_querycap(struct device *dev, unsigned int *capabilities)
 	caps = cap.capabilities & V4L2_CAP_DEVICE_CAPS
 	     ? cap.device_caps : cap.capabilities;
 
-	printf("Device `%s' on `%s' is a video %s (%s mplanes) device.\n",
-		cap.card, cap.bus_info,
+	printf("Device `%s' on `%s' (driver '%s') is a video %s (%s mplanes) device.\n",
+		cap.card, cap.bus_info, cap.driver,
 		caps & (V4L2_CAP_VIDEO_CAPTURE_MPLANE | V4L2_CAP_VIDEO_CAPTURE) ? "capture" : "output",
 		caps & (V4L2_CAP_VIDEO_CAPTURE_MPLANE | V4L2_CAP_VIDEO_OUTPUT_MPLANE) ? "with" : "without");
 
