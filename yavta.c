@@ -1698,7 +1698,7 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 
 		fflush(stdout);
 
-		if (i == nframes - dev->nbufs && !do_requeue_last)
+		if (i >= nframes - dev->nbufs && !do_requeue_last)
 			continue;
 
 		ret = video_queue_buffer(dev, buf.index, fill);
