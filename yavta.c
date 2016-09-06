@@ -171,6 +171,8 @@ static struct v4l2_format_info {
 	{ "RGB32", V4L2_PIX_FMT_RGB32, 1 },
 	{ "ARGB32", V4L2_PIX_FMT_ARGB32, 1 },
 	{ "XRGB32", V4L2_PIX_FMT_XRGB32, 1 },
+	{ "HSV24", V4L2_PIX_FMT_HSV24, 1 },
+	{ "HSV32", V4L2_PIX_FMT_HSV32, 1 },
 	{ "Y8", V4L2_PIX_FMT_GREY, 1 },
 	{ "Y10", V4L2_PIX_FMT_Y10, 1 },
 	{ "Y12", V4L2_PIX_FMT_Y12, 1 },
