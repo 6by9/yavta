@@ -39,6 +39,14 @@
 
 #include <linux/videodev2.h>
 
+#include "interface/mmal/mmal.h"
+#include "interface/mmal/mmal_buffer.h"
+#include "interface/mmal/util/mmal_connection.h"
+#include "interface/mmal/util/mmal_util.h"
+#include "bcm_host.h"
+
+
+
 #ifndef V4L2_BUF_FLAG_ERROR
 #define V4L2_BUF_FLAG_ERROR	0x0040
 #endif
@@ -58,6 +66,7 @@ struct buffer
 	unsigned int padding[VIDEO_MAX_PLANES];
 	unsigned int size[VIDEO_MAX_PLANES];
 	void *mem[VIDEO_MAX_PLANES];
+	MMAL_BUFFER_HEADER_T *mmal;
 };
 
 struct device
@@ -69,6 +78,13 @@ struct device
 	enum v4l2_memory memtype;
 	unsigned int nbufs;
 	struct buffer *buffers;
+
+	MMAL_COMPONENT_T *isp;
+	MMAL_COMPONENT_T *render;
+	MMAL_CONNECTION_T *isp_render_conn;
+	MMAL_QUEUE_T *isp_queue;
+	MMAL_POOL_T *mmal_pool;
+
 
 	unsigned int width;
 	unsigned int height;
@@ -147,79 +163,82 @@ static const char *v4l2_buf_type_name(enum v4l2_buf_type type)
 		return "Unknown";
 }
 
+#define MMAL_ENCODING_UNUSED 0
+
 static struct v4l2_format_info {
 	const char *name;
 	unsigned int fourcc;
 	unsigned char n_planes;
+	MMAL_FOURCC_T mmal_encoding;
 } pixel_formats[] = {
-	{ "RGB332", V4L2_PIX_FMT_RGB332, 1 },
-	{ "RGB444", V4L2_PIX_FMT_RGB444, 1 },
-	{ "ARGB444", V4L2_PIX_FMT_ARGB444, 1 },
-	{ "XRGB444", V4L2_PIX_FMT_XRGB444, 1 },
-	{ "RGB555", V4L2_PIX_FMT_RGB555, 1 },
-	{ "ARGB555", V4L2_PIX_FMT_ARGB555, 1 },
-	{ "XRGB555", V4L2_PIX_FMT_XRGB555, 1 },
-	{ "RGB565", V4L2_PIX_FMT_RGB565, 1 },
-	{ "RGB555X", V4L2_PIX_FMT_RGB555X, 1 },
-	{ "RGB565X", V4L2_PIX_FMT_RGB565X, 1 },
-	{ "BGR666", V4L2_PIX_FMT_BGR666, 1 },
-	{ "BGR24", V4L2_PIX_FMT_BGR24, 1 },
-	{ "RGB24", V4L2_PIX_FMT_RGB24, 1 },
-	{ "BGR32", V4L2_PIX_FMT_BGR32, 1 },
-	{ "ABGR32", V4L2_PIX_FMT_ABGR32, 1 },
-	{ "XBGR32", V4L2_PIX_FMT_XBGR32, 1 },
-	{ "RGB32", V4L2_PIX_FMT_RGB32, 1 },
-	{ "ARGB32", V4L2_PIX_FMT_ARGB32, 1 },
-	{ "XRGB32", V4L2_PIX_FMT_XRGB32, 1 },
-	{ "HSV24", V4L2_PIX_FMT_HSV24, 1 },
-	{ "HSV32", V4L2_PIX_FMT_HSV32, 1 },
-	{ "Y8", V4L2_PIX_FMT_GREY, 1 },
-	{ "Y10", V4L2_PIX_FMT_Y10, 1 },
-	{ "Y12", V4L2_PIX_FMT_Y12, 1 },
-	{ "Y16", V4L2_PIX_FMT_Y16, 1 },
-	{ "UYVY", V4L2_PIX_FMT_UYVY, 1 },
-	{ "VYUY", V4L2_PIX_FMT_VYUY, 1 },
-	{ "YUYV", V4L2_PIX_FMT_YUYV, 1 },
-	{ "YVYU", V4L2_PIX_FMT_YVYU, 1 },
-	{ "NV12", V4L2_PIX_FMT_NV12, 1 },
-	{ "NV12M", V4L2_PIX_FMT_NV12M, 2 },
-	{ "NV21", V4L2_PIX_FMT_NV21, 1 },
-	{ "NV21M", V4L2_PIX_FMT_NV21M, 2 },
-	{ "NV16", V4L2_PIX_FMT_NV16, 1 },
-	{ "NV16M", V4L2_PIX_FMT_NV16M, 2 },
-	{ "NV61", V4L2_PIX_FMT_NV61, 1 },
-	{ "NV61M", V4L2_PIX_FMT_NV61M, 2 },
-	{ "NV24", V4L2_PIX_FMT_NV24, 1 },
-	{ "NV42", V4L2_PIX_FMT_NV42, 1 },
-	{ "YUV420M", V4L2_PIX_FMT_YUV420M, 3 },
-	{ "YUV422M", V4L2_PIX_FMT_YUV422M, 3 },
-	{ "YUV444M", V4L2_PIX_FMT_YUV444M, 3 },
-	{ "YVU420M", V4L2_PIX_FMT_YVU420M, 3 },
-	{ "YVU422M", V4L2_PIX_FMT_YVU422M, 3 },
-	{ "YVU444M", V4L2_PIX_FMT_YVU444M, 3 },
-	{ "SBGGR8", V4L2_PIX_FMT_SBGGR8, 1 },
-	{ "SGBRG8", V4L2_PIX_FMT_SGBRG8, 1 },
-	{ "SGRBG8", V4L2_PIX_FMT_SGRBG8, 1 },
-	{ "SRGGB8", V4L2_PIX_FMT_SRGGB8, 1 },
-	{ "SBGGR10_DPCM8", V4L2_PIX_FMT_SBGGR10DPCM8, 1 },
-	{ "SGBRG10_DPCM8", V4L2_PIX_FMT_SGBRG10DPCM8, 1 },
-	{ "SGRBG10_DPCM8", V4L2_PIX_FMT_SGRBG10DPCM8, 1 },
-	{ "SRGGB10_DPCM8", V4L2_PIX_FMT_SRGGB10DPCM8, 1 },
-	{ "SBGGR10", V4L2_PIX_FMT_SBGGR10, 1 },
-	{ "SGBRG10", V4L2_PIX_FMT_SGBRG10, 1 },
-	{ "SGRBG10", V4L2_PIX_FMT_SGRBG10, 1 },
-	{ "SRGGB10", V4L2_PIX_FMT_SRGGB10, 1 },
-	{ "SBGGR10P", V4L2_PIX_FMT_SBGGR10P, 1 },
-	{ "SGBRG10P", V4L2_PIX_FMT_SGBRG10P, 1 },
-	{ "SGRBG10P", V4L2_PIX_FMT_SGRBG10P, 1 },
-	{ "SRGGB10P", V4L2_PIX_FMT_SRGGB10P, 1 },
-	{ "SBGGR12", V4L2_PIX_FMT_SBGGR12, 1 },
-	{ "SGBRG12", V4L2_PIX_FMT_SGBRG12, 1 },
-	{ "SGRBG12", V4L2_PIX_FMT_SGRBG12, 1 },
-	{ "SRGGB12", V4L2_PIX_FMT_SRGGB12, 1 },
-	{ "DV", V4L2_PIX_FMT_DV, 1 },
-	{ "MJPEG", V4L2_PIX_FMT_MJPEG, 1 },
-	{ "MPEG", V4L2_PIX_FMT_MPEG, 1 },
+	{ "RGB332", V4L2_PIX_FMT_RGB332, 1, 	MMAL_ENCODING_UNUSED },
+	{ "RGB444", V4L2_PIX_FMT_RGB444, 1,	MMAL_ENCODING_UNUSED },
+	{ "ARGB444", V4L2_PIX_FMT_ARGB444, 1,	MMAL_ENCODING_UNUSED },
+	{ "XRGB444", V4L2_PIX_FMT_XRGB444, 1,	MMAL_ENCODING_UNUSED },
+	{ "RGB555", V4L2_PIX_FMT_RGB555, 1,	MMAL_ENCODING_UNUSED },
+	{ "ARGB555", V4L2_PIX_FMT_ARGB555, 1,	MMAL_ENCODING_UNUSED },
+	{ "XRGB555", V4L2_PIX_FMT_XRGB555, 1,	MMAL_ENCODING_UNUSED },
+	{ "RGB565", V4L2_PIX_FMT_RGB565, 1,	MMAL_ENCODING_UNUSED },
+	{ "RGB555X", V4L2_PIX_FMT_RGB555X, 1,	MMAL_ENCODING_UNUSED },
+	{ "RGB565X", V4L2_PIX_FMT_RGB565X, 1,	MMAL_ENCODING_RGB16 },
+	{ "BGR666", V4L2_PIX_FMT_BGR666, 1,	MMAL_ENCODING_UNUSED },
+	{ "BGR24", V4L2_PIX_FMT_BGR24, 1,	MMAL_ENCODING_BGR24 },
+	{ "RGB24", V4L2_PIX_FMT_RGB24, 1,	MMAL_ENCODING_RGB24 },
+	{ "BGR32", V4L2_PIX_FMT_BGR32, 1,	MMAL_ENCODING_BGR32 },
+	{ "ABGR32", V4L2_PIX_FMT_ABGR32, 1,	MMAL_ENCODING_BGRA },
+	{ "XBGR32", V4L2_PIX_FMT_XBGR32, 1,	MMAL_ENCODING_BGR32 },
+	{ "RGB32", V4L2_PIX_FMT_RGB32, 1,	MMAL_ENCODING_RGB32 },
+	{ "ARGB32", V4L2_PIX_FMT_ARGB32, 1,	MMAL_ENCODING_ARGB },
+	{ "XRGB32", V4L2_PIX_FMT_XRGB32, 1,	MMAL_ENCODING_UNUSED },
+	{ "HSV24", V4L2_PIX_FMT_HSV24, 1,	MMAL_ENCODING_UNUSED },
+	{ "HSV32", V4L2_PIX_FMT_HSV32, 1,	MMAL_ENCODING_UNUSED },
+	{ "Y8", V4L2_PIX_FMT_GREY, 1,		MMAL_ENCODING_UNUSED },
+	{ "Y10", V4L2_PIX_FMT_Y10, 1,		MMAL_ENCODING_UNUSED },
+	{ "Y12", V4L2_PIX_FMT_Y12, 1,		MMAL_ENCODING_UNUSED },
+	{ "Y16", V4L2_PIX_FMT_Y16, 1,		MMAL_ENCODING_UNUSED },
+	{ "UYVY", V4L2_PIX_FMT_UYVY, 1,		MMAL_ENCODING_UYVY },
+	{ "VYUY", V4L2_PIX_FMT_VYUY, 1,		MMAL_ENCODING_VYUY },
+	{ "YUYV", V4L2_PIX_FMT_YUYV, 1,		MMAL_ENCODING_YUYV },
+	{ "YVYU", V4L2_PIX_FMT_YVYU, 1,		MMAL_ENCODING_YVYU },
+	{ "NV12", V4L2_PIX_FMT_NV12, 1,		MMAL_ENCODING_NV12 },
+	{ "NV12M", V4L2_PIX_FMT_NV12M, 2,	MMAL_ENCODING_UNUSED },
+	{ "NV21", V4L2_PIX_FMT_NV21, 1,		MMAL_ENCODING_NV21 },
+	{ "NV21M", V4L2_PIX_FMT_NV21M, 2,	MMAL_ENCODING_UNUSED },
+	{ "NV16", V4L2_PIX_FMT_NV16, 1,		MMAL_ENCODING_UNUSED },
+	{ "NV16M", V4L2_PIX_FMT_NV16M, 2,	MMAL_ENCODING_UNUSED },
+	{ "NV61", V4L2_PIX_FMT_NV61, 1,		MMAL_ENCODING_UNUSED },
+	{ "NV61M", V4L2_PIX_FMT_NV61M, 2,	MMAL_ENCODING_UNUSED },
+	{ "NV24", V4L2_PIX_FMT_NV24, 1,		MMAL_ENCODING_UNUSED },
+	{ "NV42", V4L2_PIX_FMT_NV42, 1,		MMAL_ENCODING_UNUSED },
+	{ "YUV420M", V4L2_PIX_FMT_YUV420M, 3,	MMAL_ENCODING_UNUSED },
+	{ "YUV422M", V4L2_PIX_FMT_YUV422M, 3,	MMAL_ENCODING_UNUSED },
+	{ "YUV444M", V4L2_PIX_FMT_YUV444M, 3,	MMAL_ENCODING_UNUSED },
+	{ "YVU420M", V4L2_PIX_FMT_YVU420M, 3,	MMAL_ENCODING_UNUSED },
+	{ "YVU422M", V4L2_PIX_FMT_YVU422M, 3,	MMAL_ENCODING_UNUSED },
+	{ "YVU444M", V4L2_PIX_FMT_YVU444M, 3,	MMAL_ENCODING_UNUSED },
+	{ "SBGGR8", V4L2_PIX_FMT_SBGGR8, 1,	MMAL_ENCODING_BAYER_SBGGR8 },
+	{ "SGBRG8", V4L2_PIX_FMT_SGBRG8, 1,	MMAL_ENCODING_BAYER_SGBRG8 },
+	{ "SGRBG8", V4L2_PIX_FMT_SGRBG8, 1,	MMAL_ENCODING_BAYER_SGRBG8 },
+	{ "SRGGB8", V4L2_PIX_FMT_SRGGB8, 1,	MMAL_ENCODING_BAYER_SRGGB8 },
+	{ "SBGGR10_DPCM8", V4L2_PIX_FMT_SBGGR10DPCM8, 1,	MMAL_ENCODING_UNUSED },
+	{ "SGBRG10_DPCM8", V4L2_PIX_FMT_SGBRG10DPCM8, 1,	MMAL_ENCODING_UNUSED },
+	{ "SGRBG10_DPCM8", V4L2_PIX_FMT_SGRBG10DPCM8, 1,	MMAL_ENCODING_UNUSED },
+	{ "SRGGB10_DPCM8", V4L2_PIX_FMT_SRGGB10DPCM8, 1,	MMAL_ENCODING_UNUSED },
+	{ "SBGGR10", V4L2_PIX_FMT_SBGGR10, 1,	MMAL_ENCODING_UNUSED },
+	{ "SGBRG10", V4L2_PIX_FMT_SGBRG10, 1,	MMAL_ENCODING_UNUSED },
+	{ "SGRBG10", V4L2_PIX_FMT_SGRBG10, 1,	MMAL_ENCODING_UNUSED },
+	{ "SRGGB10", V4L2_PIX_FMT_SRGGB10, 1,	MMAL_ENCODING_UNUSED },
+	{ "SBGGR10P", V4L2_PIX_FMT_SBGGR10P, 1,	MMAL_ENCODING_BAYER_SBGGR10P },
+	{ "SGBRG10P", V4L2_PIX_FMT_SGBRG10P, 1,	MMAL_ENCODING_BAYER_SGBRG10P },
+	{ "SGRBG10P", V4L2_PIX_FMT_SGRBG10P, 1,	MMAL_ENCODING_BAYER_SGRBG10P },
+	{ "SRGGB10P", V4L2_PIX_FMT_SRGGB10P, 1,	MMAL_ENCODING_BAYER_SRGGB10P },
+	{ "SBGGR12", V4L2_PIX_FMT_SBGGR12, 1,	MMAL_ENCODING_UNUSED },
+	{ "SGBRG12", V4L2_PIX_FMT_SGBRG12, 1,	MMAL_ENCODING_UNUSED },
+	{ "SGRBG12", V4L2_PIX_FMT_SGRBG12, 1,	MMAL_ENCODING_UNUSED },
+	{ "SRGGB12", V4L2_PIX_FMT_SRGGB12, 1,	MMAL_ENCODING_UNUSED },
+	{ "DV", V4L2_PIX_FMT_DV, 1,		MMAL_ENCODING_UNUSED },
+	{ "MJPEG", V4L2_PIX_FMT_MJPEG, 1,	MMAL_ENCODING_UNUSED },
+	{ "MPEG", V4L2_PIX_FMT_MPEG, 1,		MMAL_ENCODING_UNUSED },
 };
 
 static void list_formats(void)
@@ -254,6 +273,18 @@ static const struct v4l2_format_info *v4l2_format_by_name(const char *name)
 
 	for (i = 0; i < ARRAY_SIZE(pixel_formats); ++i) {
 		if (strcasecmp(pixel_formats[i].name, name) == 0)
+			return &pixel_formats[i];
+	}
+
+	return NULL;
+}
+
+static const struct v4l2_format_info *v4l2_format_by_mmal_encoding(MMAL_FOURCC_T encoding)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(pixel_formats); ++i) {
+		if (pixel_formats[i].mmal_encoding == encoding)
 			return &pixel_formats[i];
 	}
 
@@ -925,6 +956,23 @@ static int video_alloc_buffers(struct device *dev, int nbufs,
 
 		if (ret < 0)
 			return ret;
+
+		if (dev->mmal_pool) {
+			MMAL_BUFFER_HEADER_T *mmal_buf;
+			mmal_buf = mmal_queue_get(dev->mmal_pool->queue);
+			if (!mmal_buf) {
+				printf("Failed to get a buffer from the pool. Queue length %d\n", mmal_queue_length(dev->mmal_pool->queue));
+				return -1;
+			}
+			mmal_buf->user_data = &buffers[i];
+			mmal_buf->data = buffers[i].mem[0];
+			mmal_buf->alloc_size = buf.length;
+			buffers[i].mmal = mmal_buf;
+			printf("Linking V4L2 buffer index %d ptr %p to MMAL header %p\n",
+				i, &buffers[i], mmal_buf);
+			/* Put buffer back in the pool */
+			mmal_buffer_header_release(mmal_buf);
+		}
 	}
 
 	dev->timestamp_type = buf.flags & V4L2_BUF_FLAG_TIMESTAMP_MASK;
@@ -1544,6 +1592,125 @@ static void video_verify_buffer(struct device *dev, struct v4l2_buffer *buf)
 	}
 }
 
+static void isp_ip_cb(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
+{
+	struct device *dev = (struct device *)port->userdata;
+	unsigned int i;
+	printf("Buffer %p (->data %p) returned\n", buffer, buffer->data);
+	for (i = 0; i < dev->nbufs; i++) {
+		if (dev->buffers[i].mmal == buffer) {
+			printf("Matches V4L2 buffer index %d / %d\n", i, dev->buffers[i].idx);
+			video_queue_buffer(dev, dev->buffers[i].idx, BUFFER_FILL_NONE);
+			mmal_buffer_header_release(buffer);
+			buffer = NULL;
+			break;
+		}
+	}
+	if (buffer) {
+		printf("Failed to find matching V4L2 buffer for mmal buffer %p\n", buffer);
+		mmal_buffer_header_release(buffer);
+	}
+}
+
+static int setup_mmal(struct device *dev, int nbufs)
+{
+	MMAL_STATUS_T status;
+	MMAL_PORT_T *port;
+	const struct v4l2_format_info *info;
+	struct v4l2_format fmt;
+	int ret;
+
+	status = mmal_component_create("vc.ril.isp", &dev->isp);
+	if(status != MMAL_SUCCESS)
+	{
+		printf("Failed to create isp\n");
+		return -1;
+	}
+
+	status = mmal_component_create("vc.ril.video_render", &dev->render);
+	if(status != MMAL_SUCCESS)
+	{
+		printf("Failed to create render\n");
+		return -1;
+	}
+	port = dev->isp->input[0];
+
+	memset(&fmt, 0, sizeof fmt);
+	fmt.type = dev->type;
+
+	ret = ioctl(dev->fd, VIDIOC_G_FMT, &fmt);
+	if (ret < 0) {
+		printf("Unable to get format: %s (%d).\n", strerror(errno),
+			errno);
+		return ret;
+	}
+
+	info = v4l2_format_by_fourcc(fmt.fmt.pix.pixelformat);
+	if (!info || info->mmal_encoding == MMAL_ENCODING_UNUSED)
+	{
+		printf("Unsupported encoding\n");
+		return -1;
+	}
+	port->format->encoding = info->mmal_encoding;
+	port->format->es->video.crop.width = fmt.fmt.pix.width;
+	port->format->es->video.crop.height = fmt.fmt.pix.height;
+	port->format->es->video.width = mmal_encoding_stride_to_width(port->format->encoding, fmt.fmt.pix.bytesperline);
+	/* FIXME - buffer may not be aligned vertically */
+	port->format->es->video.height = (fmt.fmt.pix.height+15) & ~15;	
+	//Ignore for now, but will be wanted for video encode.
+	//port->format->es->video.frame_rate.num = 10000;
+	//port->format->es->video.frame_rate.den = frame_interval ? frame_interval : 10000;
+	port->buffer_num = nbufs;
+
+	status = mmal_port_format_commit(port);
+	if (status != MMAL_SUCCESS)
+	{
+		printf("Commit failed\n");
+		return -1;
+	}
+	mmal_log_dump_port(port);
+
+	dev->mmal_pool = mmal_pool_create(nbufs, 0);
+	if (!dev->mmal_pool) {
+		printf("Failed to create pool\n");
+		return -1;
+	}
+	printf("Created pool of length %d, size %d\n", nbufs, 0);
+
+	port->userdata = (struct MMAL_PORT_USERDATA_T *)dev;
+	status = mmal_port_enable(port, isp_ip_cb);
+	if (status != MMAL_SUCCESS)
+	{
+		printf("ISP input enable failed\n");
+		return -1;
+	}
+
+	mmal_format_copy(dev->isp->output[0]->format, port->format);
+	port = dev->isp->output[0];
+	port->format->encoding = MMAL_ENCODING_I420;
+
+	status = mmal_port_format_commit(port);
+	if (status != MMAL_SUCCESS)
+	{
+		printf("ISP o/p commit failed\n");
+		return -1;
+	}
+
+	status =  mmal_connection_create(&dev->isp_render_conn, port, dev->render->input[0], MMAL_CONNECTION_FLAG_TUNNELLING);
+	if (status != MMAL_SUCCESS)
+	{
+		printf("Connection create failed\n");
+		return -1;
+	}
+	status = mmal_connection_enable(dev->isp_render_conn);
+	if (status != MMAL_SUCCESS)
+	{
+		printf("Connection enable failed\n");
+		return -1;
+	}
+	return 0;
+}
+
 static void video_save_image(struct device *dev, struct v4l2_buffer *buf,
 			     const char *pattern, unsigned int sequence)
 {
@@ -1647,6 +1814,7 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 
 	for (i = 0; i < nframes; ++i) {
 		const char *ts_type, *ts_source;
+		int queue_buffer = 1;
 		/* Dequeue a buffer. */
 		memset(&buf, 0, sizeof buf);
 		memset(planes, 0, sizeof planes);
@@ -1694,6 +1862,29 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 		if (video_is_capture(dev) && pattern && !skip)
 			video_save_image(dev, &buf, pattern, i);
 
+		if (dev->mmal_pool) {
+			MMAL_BUFFER_HEADER_T *mmal = mmal_queue_get(dev->mmal_pool->queue);
+			MMAL_STATUS_T status;
+			if (!mmal) {
+				printf("Failed to get MMAL buffer\n");
+			} else {
+				/* Need to wait for MMAL to be finished with the buffer before returning to V4L2 */
+				queue_buffer = 0;
+				if (((struct buffer*)mmal->user_data)->idx != buf.index) {
+					printf("Mismatch in expected buffers. V4L2 gave idx %d, MMAL expecting %d\n",
+						buf.index, ((struct buffer*)mmal->user_data)->idx);
+				}
+				mmal->length = buf.bytesused;
+				printf("alloc len %d\n", mmal->alloc_size);
+				mmal->flags = MMAL_BUFFER_HEADER_FLAG_FRAME_END;
+				//mmal->pts = buf.timestamp;
+				printf("Sending buffer %p with ->data %p, length %u\n", mmal, mmal->data, mmal->length);
+				status = mmal_port_send_buffer(dev->isp->input[0], mmal);
+				if (status != MMAL_SUCCESS)
+					printf("mmal_port_send_buffer failed %d\n", status);
+			}
+		}
+
 		if (skip)
 			--skip;
 
@@ -1704,6 +1895,8 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 		fflush(stdout);
 
 		if (i >= nframes - dev->nbufs && !do_requeue_last)
+			continue;
+		if (!queue_buffer)
 			continue;
 
 		ret = video_queue_buffer(dev, buf.index, fill);
@@ -1742,6 +1935,7 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 	printf("Captured %u frames in %lu.%06lu seconds (%f fps, %f B/s).\n",
 		i, ts.tv_sec, ts.tv_nsec/1000, fps, bps);
 
+	sleep(10);
 done:
 	return video_free_buffers(dev);
 }
@@ -1793,6 +1987,7 @@ static void usage(const char *argv0)
 	printf("    --skip n			Skip the first n frames\n");
 	printf("    --sleep-forever		Sleep forever after configuring the device\n");
 	printf("    --stride value		Line stride in bytes\n");
+	printf("-m  --mmal			Enable MMAL rendering of images\n");
 }
 
 #define OPT_ENUM_FORMATS	256
@@ -1830,6 +2025,7 @@ static struct option opts[] = {
 	{"input", 1, 0, 'i'},
 	{"list-controls", 0, 0, 'l'},
 	{"log-status", 0, 0, OPT_LOG_STATUS},
+	{"mmal", 0, 0, 'm'},
 	{"nbufs", 1, 0, 'n'},
 	{"no-query", 0, 0, OPT_NO_QUERY},
 	{"offset", 1, 0, OPT_USERPTR_OFFSET},
@@ -1869,6 +2065,7 @@ int main(int argc, char *argv[])
 	int do_sleep_forever = 0, do_requeue_last = 0;
 	int do_rt = 0, do_log_status = 0;
 	int no_query = 0, do_queue_late = 0;
+	int do_mmal_render = 0;
 	char *endptr;
 	int c;
 
@@ -1902,7 +2099,7 @@ int main(int argc, char *argv[])
 	video_init(&dev);
 
 	opterr = 0;
-	while ((c = getopt_long(argc, argv, "B:c::Cd:f:F::hi:Iln:pq:r:R::s:t:uw:", opts, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "B:c::Cd:f:F::hi:Ilmn:pq:r:R::s:t:uw:", opts, NULL)) != -1) {
 
 		switch (c) {
 		case 'B':
@@ -1954,6 +2151,10 @@ int main(int argc, char *argv[])
 			break;
 		case 'l':
 			do_list_controls = 1;
+			break;
+		case 'm':
+			do_mmal_render = 1;
+			bcm_host_init();
 			break;
 		case 'n':
 			nbufs = atoi(optarg);
@@ -2176,6 +2377,10 @@ int main(int argc, char *argv[])
 			video_close(&dev);
 			return 1;
 		}
+	}
+
+	if (do_mmal_render) {
+		setup_mmal(&dev, nbufs);
 	}
 
 	while (do_sleep_forever)
