@@ -1934,8 +1934,6 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 
 	printf("Captured %u frames in %lu.%06lu seconds (%f fps, %f B/s).\n",
 		i, ts.tv_sec, ts.tv_nsec/1000, fps, bps);
-
-	sleep(10);
 done:
 	return video_free_buffers(dev);
 }
