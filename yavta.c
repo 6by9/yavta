@@ -100,6 +100,8 @@ struct device
 	unsigned int height;
 	uint32_t buffer_output_flags;
 	uint32_t timestamp_type;
+	struct timeval starttime;
+	int64_t lastpts;
 
 	unsigned char num_planes;
 	struct v4l2_plane_pix_format plane_fmt[VIDEO_MAX_PLANES];
@@ -1659,10 +1661,11 @@ static void isp_ip_cb(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
 	}
 }
 
+FILE *pts_file_handle;
 static void encoder_buffer_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
 {
 	MMAL_STATUS_T status;
-	printf("Buffer %p returned, filled %d, timestamp %llu, flags %04X", buffer, buffer->length, buffer->pts, buffer->flags);
+	//printf("Buffer %p returned, filled %d, timestamp %llu, flags %04X\n", buffer, buffer->length, buffer->pts, buffer->flags);
 	//vcos_log_error("File handle: %p", port->userdata);
 	unsigned int bytes_written = buffer->length;
 
@@ -1683,6 +1686,8 @@ static void encoder_buffer_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buf
 		{
 			printf("No file to save to\n");
 		}
+		if (pts_file_handle)
+			fprintf(pts_file_handle,"%lld.%03lld\n", buffer->pts/1000, buffer->pts%1000);
 
 		buffer->length = 0;
 		status = mmal_port_send_buffer(port, buffer);
@@ -2010,7 +2015,12 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 
 	// open h264 file and put the file handle in userdata for the encoder output port
 	if (do_encode)
+	{
 		encoder_output->userdata = (void*)fopen(filename, "wb");
+		pts_file_handle = (void*)fopen("file.pts", "wb");
+		if (pts_file_handle) /* save header for mkvmerge */
+			fprintf(pts_file_handle, "# timecode format v2\n");
+	}
 	else
 		encoder_output->userdata = NULL;
 
@@ -2222,10 +2232,20 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 					       buf.length, buf.bytesused);
 				}
 				mmal->length = buf.bytesused;
-				printf("alloc len %d\n", mmal->alloc_size);
+
+				if (!dev->starttime.tv_sec)
+					dev->starttime = buf.timestamp;
+
+				struct timeval pts;
+				timersub(&buf.timestamp, &dev->starttime, &pts);
+				//MMAL PTS is in usecs, so convert from struct timeval
+				mmal->pts = (pts.tv_sec * 1000000) + pts.tv_usec;
+				if (mmal->pts > (dev->lastpts+22000))
+					printf("DROPPED FRAME - %lld and %lld\n", dev->lastpts, mmal->pts);
+				dev->lastpts = mmal->pts;
+
 				mmal->flags = MMAL_BUFFER_HEADER_FLAG_FRAME_END;
 				//mmal->pts = buf.timestamp;
-				printf("Sending buffer %p with ->data %p, length %u\n", mmal, mmal->data, mmal->length);
 				status = mmal_port_send_buffer(dev->isp->input[0], mmal);
 				if (status != MMAL_SUCCESS)
 					printf("mmal_port_send_buffer failed %d\n", status);
