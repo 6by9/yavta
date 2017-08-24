@@ -55,6 +55,8 @@
 
 #define ARRAY_SIZE(a)	(sizeof(a)/sizeof((a)[0]))
 
+#define VCSM_IMPORT_DMABUF MMAL_TRUE
+
 enum buffer_fill_mode
 {
 	BUFFER_FILL_NONE = 0,
@@ -991,7 +993,7 @@ static int video_alloc_buffers(struct device *dev, int nbufs,
 		if (ret < 0)
 			return ret;
 
-		if (!buffer_export(dev->fd, dev->type, i, &buffers[i].dma_fd, &buffers[i].vcsm_handle))
+		if (VCSM_IMPORT_DMABUF && !buffer_export(dev->fd, dev->type, i, &buffers[i].dma_fd, &buffers[i].vcsm_handle))
 		{
 			printf("Exported buffer %d to dmabuf %d, vcsm handle %u\n", i, buffers[i].dma_fd, buffers[i].vcsm_handle);
 		}
@@ -1004,11 +1006,14 @@ static int video_alloc_buffers(struct device *dev, int nbufs,
 			}
 			mmal_buf->user_data = &buffers[i];
 
-			mmal_buf->data = (uint8_t*)vcsm_vc_hdl_from_hdl(buffers[i].vcsm_handle); //mem[0];
+			if (VCSM_IMPORT_DMABUF)
+				mmal_buf->data = (uint8_t*)vcsm_vc_hdl_from_hdl(buffers[i].vcsm_handle);
+			else
+				mmal_buf->data = buffers[i].mem[0];
 			mmal_buf->alloc_size = buf.length;
 			buffers[i].mmal = mmal_buf;
-			printf("Linking V4L2 buffer index %d ptr %p to MMAL header %p. vcsm_handle 0x%X\n",
-				i, &buffers[i], mmal_buf, vcsm_vc_hdl_from_hdl(buffers[i].vcsm_handle));
+			printf("Linking V4L2 buffer index %d ptr %p to MMAL header %p. mmal->data 0x%X\n",
+				i, &buffers[i], mmal_buf, (uint32_t)mmal_buf->data);
 			/* Put buffer back in the pool */
 			mmal_buffer_header_release(mmal_buf);
 		}
@@ -1645,10 +1650,10 @@ static void isp_ip_cb(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
 {
 	struct device *dev = (struct device *)port->userdata;
 	unsigned int i;
-	printf("Buffer %p (->data %p) returned\n", buffer, buffer->data);
+//	printf("Buffer %p (->data %p) returned\n", buffer, buffer->data);
 	for (i = 0; i < dev->nbufs; i++) {
 		if (dev->buffers[i].mmal == buffer) {
-			printf("Matches V4L2 buffer index %d / %d\n", i, dev->buffers[i].idx);
+//			printf("Matches V4L2 buffer index %d / %d\n", i, dev->buffers[i].idx);
 			video_queue_buffer(dev, dev->buffers[i].idx, BUFFER_FILL_NONE);
 			mmal_buffer_header_release(buffer);
 			buffer = NULL;
@@ -1837,7 +1842,7 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 	}
 	mmal_log_dump_port(port);
 
-	if (mmal_port_parameter_set_boolean(port, MMAL_PARAMETER_ZERO_COPY, MMAL_TRUE) != MMAL_SUCCESS)
+	if (mmal_port_parameter_set_boolean(port, MMAL_PARAMETER_ZERO_COPY, VCSM_IMPORT_DMABUF) != MMAL_SUCCESS)
 	{
 		printf("Failed to set zero copy\n");
 		return -1;
@@ -1900,8 +1905,8 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 	// Only supporting H264 at the moment
 	encoder_output->format->encoding = MMAL_ENCODING_H264;
 
-	encoder_output->format->bitrate = 17000000;
-	encoder_output->buffer_size = encoder_output->buffer_size_recommended;
+	encoder_output->format->bitrate = 5000000;
+	encoder_output->buffer_size = 256<<10;//encoder_output->buffer_size_recommended;
 
 	if (encoder_output->buffer_size < encoder_output->buffer_size_min)
 		encoder_output->buffer_size = encoder_output->buffer_size_min;
@@ -2200,13 +2205,13 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 
 		clock_gettime(CLOCK_MONOTONIC, &ts);
 		get_ts_flags(buf.flags, &ts_type, &ts_source);
-		printf("%u (%u) [%c] %s %u %u B %ld.%06ld %ld.%06ld %.3f fps ts %s/%s\n", i, buf.index,
+/*		printf("%u (%u) [%c] %s %u %u B %ld.%06ld %ld.%06ld %.3f fps ts %s/%s\n", i, buf.index,
 			(buf.flags & V4L2_BUF_FLAG_ERROR) ? 'E' : '-',
 			v4l2_field_name(buf.field),
 			buf.sequence, video_buffer_bytes_used(dev, &buf),
 			buf.timestamp.tv_sec, buf.timestamp.tv_usec,
 			ts.tv_sec, ts.tv_nsec/1000, fps,
-			ts_type, ts_source);
+			ts_type, ts_source);*/
 
 		last = buf.timestamp;
 
