@@ -1002,11 +1002,11 @@ static int video_alloc_buffers(struct device *dev, int nbufs,
 			}
 			mmal_buf->user_data = &buffers[i];
 
-			mmal_buf->data = buffers[i].mem[0];
+			mmal_buf->data = (uint8_t*)vcsm_vc_hdl_from_hdl(buffers[i].vcsm_handle); //mem[0];
 			mmal_buf->alloc_size = buf.length;
 			buffers[i].mmal = mmal_buf;
-			printf("Linking V4L2 buffer index %d ptr %p to MMAL header %p\n",
-				i, &buffers[i], mmal_buf);
+			printf("Linking V4L2 buffer index %d ptr %p to MMAL header %p. vcsm_handle 0x%X\n",
+				i, &buffers[i], mmal_buf, vcsm_vc_hdl_from_hdl(buffers[i].vcsm_handle));
 			/* Put buffer back in the pool */
 			mmal_buffer_header_release(mmal_buf);
 		}
@@ -1832,6 +1832,11 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 	}
 	mmal_log_dump_port(port);
 
+	if (mmal_port_parameter_set_boolean(port, MMAL_PARAMETER_ZERO_COPY, MMAL_TRUE) != MMAL_SUCCESS)
+	{
+		printf("Failed to set zero copy\n");
+		return -1;
+	}
 	dev->mmal_pool = mmal_pool_create(nbufs, 0);
 	if (!dev->mmal_pool) {
 		printf("Failed to create pool\n");
@@ -2211,6 +2216,11 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 					printf("Mismatch in expected buffers. V4L2 gave idx %d, MMAL expecting %d\n",
 						buf.index, ((struct buffer*)mmal->user_data)->idx);
 				}
+				if (buf.bytesused != buf.length)
+				{
+					printf("V4L2 buffer came back as shorter than allocated - length %u, bytesused %u\n",
+					       buf.length, buf.bytesused);
+				}
 				mmal->length = buf.bytesused;
 				printf("alloc len %d\n", mmal->alloc_size);
 				mmal->flags = MMAL_BUFFER_HEADER_FLAG_FRAME_END;
@@ -2435,7 +2445,7 @@ int main(int argc, char *argv[])
 	video_init(&dev);
 
 	opterr = 0;
-	while ((c = getopt_long(argc, argv, "B:c::Cd:f:F::hi:Ilmn:pq:r:R::s:t:uw:", opts, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "B:c::Cd:E::f:F::hi:Ilmn:pq:r:R::s:t:uw:", opts, NULL)) != -1) {
 
 		switch (c) {
 		case 'B':
