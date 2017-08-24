@@ -69,6 +69,8 @@ struct buffer
 	unsigned int size[VIDEO_MAX_PLANES];
 	void *mem[VIDEO_MAX_PLANES];
 	MMAL_BUFFER_HEADER_T *mmal;
+	int dma_fd;
+	unsigned int vcsm_handle;
 };
 
 struct device
@@ -759,6 +761,28 @@ static int video_set_framerate(struct device *dev, struct v4l2_fract *time_per_f
 	return 0;
 }
 
+static int buffer_export(int v4l2fd, enum v4l2_buf_type bt, int index, int *dmafd, unsigned int *vcsm_hdl)
+{
+	struct v4l2_exportbuffer expbuf;
+	unsigned int vcsm_handle;
+
+	memset(&expbuf, 0, sizeof(expbuf));
+	expbuf.type = bt;
+	expbuf.index = index;
+	if (ioctl(v4l2fd, VIDIOC_EXPBUF, &expbuf))
+	{
+		printf("Failed to EXPBUF\n");
+		return -1;
+	}
+	*dmafd = expbuf.fd;
+
+	printf("Importing DMABUF %d into VCSM...\n", expbuf.fd);
+	vcsm_handle = vcsm_import_dmabuf(expbuf.fd, "V4L2 buf");
+	printf("...done. vcsm_handle %u\n", vcsm_handle);
+	*vcsm_hdl = vcsm_handle;
+	return 0;
+}
+
 static int video_buffer_mmap(struct device *dev, struct buffer *buffer,
 			     struct v4l2_buffer *v4l2buf)
 {
@@ -965,6 +989,10 @@ static int video_alloc_buffers(struct device *dev, int nbufs,
 		if (ret < 0)
 			return ret;
 
+		if (!buffer_export(dev->fd, dev->type, i, &buffers[i].dma_fd, &buffers[i].vcsm_handle))
+		{
+			printf("Exported buffer %d to dmabuf %d, vcsm handle %u\n", i, buffers[i].dma_fd, buffers[i].vcsm_handle);
+		}
 		if (dev->mmal_pool) {
 			MMAL_BUFFER_HEADER_T *mmal_buf;
 			mmal_buf = mmal_queue_get(dev->mmal_pool->queue);
@@ -1002,6 +1030,16 @@ static int video_free_buffers(struct device *dev)
 	for (i = 0; i < dev->nbufs; ++i) {
 		switch (dev->memtype) {
 		case V4L2_MEMORY_MMAP:
+			if (dev->buffers[i].vcsm_handle)
+			{
+				printf("Releasing vcsm handle %u\n", dev->buffers[i].vcsm_handle);
+				vcsm_free(dev->buffers[i].vcsm_handle);
+			}
+			if (dev->buffers[i].dma_fd)
+			{
+				printf("Closing dma_buf %d\n", dev->buffers[i].dma_fd);
+				close(dev->buffers[i].dma_fd);
+			}
 			ret = video_buffer_munmap(dev, &dev->buffers[i]);
 			if (ret < 0)
 				return ret;
