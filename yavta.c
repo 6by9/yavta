@@ -1854,7 +1854,7 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 	port->format->es->video.crop.width = fmt.fmt.pix.width;
 	port->format->es->video.crop.height = fmt.fmt.pix.height;
 	port->format->es->video.width = (port->format->es->video.crop.width+31) & ~31;
-					//mmal_encoding_stride_to_width(port->format->encoding, fmt.fmt.pix.bytesperline);
+	//mmal_encoding_stride_to_width(port->format->encoding, fmt.fmt.pix.bytesperline);
 	/* FIXME - buffer may not be aligned vertically */
 	port->format->es->video.height = (fmt.fmt.pix.height+15) & ~15;	
 	//Ignore for now, but will be wanted for video encode.
@@ -1872,6 +1872,17 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 		return -1;
 	}
 	mmal_log_dump_port(port);
+
+	unsigned int mmal_stride = mmal_encoding_width_to_stride(info->mmal_encoding, port->format->es->video.width);
+	if (mmal_stride != fmt.fmt.pix.bytesperline) {
+		if (video_set_format(dev, fmt.fmt.pix.width, fmt.fmt.pix.height, fmt.fmt.pix.pixelformat, mmal_stride,
+				     fmt.fmt.pix.sizeimage, fmt.fmt.pix.field, fmt.fmt.pix.flags) < 0) 
+			printf("Failed to adjust stride\n");
+		else
+			// Retrieve settings again so local state is correct
+			video_get_format(dev);
+	}
+
 
 	if (mmal_port_parameter_set_boolean(port, MMAL_PARAMETER_ZERO_COPY, VCSM_IMPORT_DMABUF) != MMAL_SUCCESS)
 	{
@@ -1909,19 +1920,19 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 	encoder_input = dev->encoder->input[0];
 	encoder_output = dev->encoder->output[0];
 
-	printf("Create connection isp output to splitter input....");
+	printf("Create connection isp output to splitter input....\n");
 	status =  mmal_connection_create(&dev->connections[0], isp_output, dev->splitter->input[0], MMAL_CONNECTION_FLAG_TUNNELLING);
 	if(status != MMAL_SUCCESS)
 	{
-		printf("Failed to create connection status %d: isp->splitter", status);
+		printf("Failed to create connection status %d: isp->splitter\n", status);
 		return -1;
 	}
 
-	printf("Create connection splitter output to render input....");
+	printf("Create connection splitter output to render input....\n");
 	status =  mmal_connection_create(&dev->connections[1], dev->splitter->output[0], dev->render->input[0], MMAL_CONNECTION_FLAG_TUNNELLING);
 	if(status != MMAL_SUCCESS)
 	{
-		printf("Failed to create connection status %d: splitter->render", status);
+		printf("Failed to create connection status %d: splitter->render\n", status);
 		return -1;
 	}
 
@@ -1929,7 +1940,7 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 	status =  mmal_connection_create(&dev->connections[2], dev->splitter->output[1], encoder_input, MMAL_CONNECTION_FLAG_TUNNELLING);
 	if(status != MMAL_SUCCESS)
 	{
-		printf("Failed to create connection status %d: splitter->encoder", status);
+		printf("Failed to create connection status %d: splitter->encoder\n", status);
 		return -1;
 	}
 
@@ -1957,7 +1968,7 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 
 	if (status != MMAL_SUCCESS)
 	{
-		printf("Unable to set format on encoder output port");
+		printf("Unable to set format on encoder output port\n");
 	}
 
 	{
@@ -1971,61 +1982,61 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 		status = mmal_port_parameter_set(encoder_output, &param.hdr);
 		if (status != MMAL_SUCCESS)
 		{
-			printf("Unable to set H264 profile");
+			printf("Unable to set H264 profile\n");
 		}
 	}
 
 	if (mmal_port_parameter_set_boolean(encoder_input, MMAL_PARAMETER_VIDEO_IMMUTABLE_INPUT, 1) != MMAL_SUCCESS)
 	{
-		printf("Unable to set immutable input flag");
+		printf("Unable to set immutable input flag\n");
 		// Continue rather than abort..
 	}
 
 	//set INLINE HEADER flag to generate SPS and PPS for every IDR if requested
 	if (mmal_port_parameter_set_boolean(encoder_output, MMAL_PARAMETER_VIDEO_ENCODE_INLINE_HEADER, 0) != MMAL_SUCCESS)
 	{
-		printf("failed to set INLINE HEADER FLAG parameters");
+		printf("failed to set INLINE HEADER FLAG parameters\n");
 		// Continue rather than abort..
 	}
 
 	//set INLINE VECTORS flag to request motion vector estimates
 	if (mmal_port_parameter_set_boolean(encoder_output, MMAL_PARAMETER_VIDEO_ENCODE_INLINE_VECTORS, 0) != MMAL_SUCCESS)
 	{
-		printf("failed to set INLINE VECTORS parameters");
+		printf("failed to set INLINE VECTORS parameters\n");
 		// Continue rather than abort..
 	}
 
 	if (status != MMAL_SUCCESS)
 	{
-		printf("Unable to set format on video encoder input port");
+		printf("Unable to set format on video encoder input port\n");
 	}
 
-	printf("Enable splitter....");
+	printf("Enable splitter....\n");
 
 	status = mmal_component_enable(dev->splitter);
 	if(status != MMAL_SUCCESS)
 	{
-		printf("Failed to enable");
+		printf("Failed to enable\n");
 		return -1;
 	}
 	status = mmal_port_parameter_set_boolean(dev->splitter->output[0], MMAL_PARAMETER_ZERO_COPY, MMAL_TRUE);
 	if(status != MMAL_SUCCESS)
 	{
-		printf("Failed to set zero copy");
+		printf("Failed to set zero copy\n");
 		return -1;
 	}
 
-	printf("Enable encoder....");
+	printf("Enable encoder....\n");
 	status = mmal_component_enable(dev->encoder);
 	if(status != MMAL_SUCCESS)
 	{
-		printf("Failed to enable");
+		printf("Failed to enable\n");
 		return -1;
 	}
 	status = mmal_port_parameter_set_boolean(encoder_output, MMAL_PARAMETER_ZERO_COPY, MMAL_TRUE);
 	if(status != MMAL_SUCCESS)
 	{
-		printf("Failed to set zero copy");
+		printf("Failed to set zero copy\n");
 		return -1;
 	}
 
@@ -2034,15 +2045,15 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 	{
 		return -1;
 	}
-	printf("Enable connection[1]...");
+	printf("Enable connection[1]...\n");
 	status =  mmal_connection_enable(dev->connections[1]);
 	if (status != MMAL_SUCCESS)
 	{
 		return -1;
 	}
 
-	printf("Enable connection[2]...");
-	printf("buffer size is %d bytes, num %d", dev->splitter->output[0]->buffer_size, dev->splitter->output[0]->buffer_num);
+	printf("Enable connection[2]...\n");
+	printf("buffer size is %d bytes, num %d\n", dev->splitter->output[0]->buffer_size, dev->splitter->output[0]->buffer_num);
 	status =  mmal_connection_enable(dev->connections[2]);
 	if (status != MMAL_SUCCESS)
 	{
@@ -2062,18 +2073,18 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 
 	//Create encoder output buffers
 
-	printf("Create pool of %d buffers of size %d", encoder_output->buffer_num, encoder_output->buffer_size);
+	printf("Create pool of %d buffers of size %d\n", encoder_output->buffer_num, encoder_output->buffer_size);
 	dev->output_pool = mmal_port_pool_create(encoder_output, encoder_output->buffer_num, encoder_output->buffer_size);
 	if(!dev->output_pool)
 	{
-		printf("Failed to create pool");
+		printf("Failed to create pool\n");
 		return -1;
 	}
 
 	status = mmal_port_enable(encoder_output, encoder_buffer_callback);
 	if(status != MMAL_SUCCESS)
 	{
-		printf("Failed to enable port");
+		printf("Failed to enable port\n");
 	}
 
 	unsigned int i;
@@ -2083,18 +2094,17 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 
 		if (!buffer)
 		{
-			printf("Where'd my buffer go?!");
+			printf("Where'd my buffer go?!\n");
 			return -1;
 		}
 		status = mmal_port_send_buffer(encoder_output, buffer);
 		if(status != MMAL_SUCCESS)
 		{
-			printf("mmal_port_send_buffer failed on buffer %p, status %d", buffer, status);
+			printf("mmal_port_send_buffer failed on buffer %p, status %d\n", buffer, status);
 			return -1;
 		}
 		printf("Sent buffer %p", buffer);
 	}
-
 
 	return 0;
 }
