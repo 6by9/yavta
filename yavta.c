@@ -100,6 +100,8 @@ struct device
 
 	unsigned int width;
 	unsigned int height;
+	unsigned int fps;
+	unsigned int frame_time_usec;
 	uint32_t buffer_output_flags;
 	uint32_t timestamp_type;
 	struct timeval starttime;
@@ -652,6 +654,28 @@ static int video_get_format(struct device *dev)
 	return 0;
 }
 
+static int format_bpp(__u32 pixfmt)
+{
+	switch(pixfmt)
+	{
+		case V4L2_PIX_FMT_BGR24:
+		case V4L2_PIX_FMT_RGB24:
+			return 4;
+		case V4L2_PIX_FMT_YUYV:
+		case V4L2_PIX_FMT_YVYU:
+		case V4L2_PIX_FMT_UYVY:
+		case V4L2_PIX_FMT_VYUY:
+			return 2;
+		case V4L2_PIX_FMT_SRGGB8:
+		case V4L2_PIX_FMT_SBGGR8:
+		case V4L2_PIX_FMT_SGRBG8:
+		case V4L2_PIX_FMT_SGBRG8:
+			return 1;
+		default:
+			return 1;
+	}
+}
+
 static int video_set_format(struct device *dev, unsigned int w, unsigned int h,
 			    unsigned int format, unsigned int stride,
 			    unsigned int buffer_size, enum v4l2_field field,
@@ -683,6 +707,10 @@ static int video_set_format(struct device *dev, unsigned int w, unsigned int h,
 		fmt.fmt.pix.height = h;
 		fmt.fmt.pix.pixelformat = format;
 		fmt.fmt.pix.field = field;
+		printf("stride is %d\n",stride);
+		if (!stride)
+			stride = ((w+31) &~31)*format_bpp(format);
+		printf("stride is now %d\n",stride);
 		fmt.fmt.pix.bytesperline = stride;
 		fmt.fmt.pix.sizeimage = buffer_size;
 		fmt.fmt.pix.priv = V4L2_PIX_FMT_PRIV_MAGIC;
@@ -1833,6 +1861,9 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 	//port->format->es->video.frame_rate.num = 10000;
 	//port->format->es->video.frame_rate.den = frame_interval ? frame_interval : 10000;
 	port->buffer_num = nbufs;
+	if (dev->fps) {
+		dev->frame_time_usec = 1000000/dev->fps;
+	}
 
 	status = mmal_port_format_commit(port);
 	if (status != MMAL_SUCCESS)
@@ -1905,7 +1936,7 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 	// Only supporting H264 at the moment
 	encoder_output->format->encoding = MMAL_ENCODING_H264;
 
-	encoder_output->format->bitrate = 5000000;
+	encoder_output->format->bitrate = 10000000;
 	encoder_output->buffer_size = 256<<10;//encoder_output->buffer_size_recommended;
 
 	if (encoder_output->buffer_size < encoder_output->buffer_size_min)
@@ -2245,8 +2276,8 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 				timersub(&buf.timestamp, &dev->starttime, &pts);
 				//MMAL PTS is in usecs, so convert from struct timeval
 				mmal->pts = (pts.tv_sec * 1000000) + pts.tv_usec;
-				if (mmal->pts > (dev->lastpts+22000))
-					printf("DROPPED FRAME - %lld and %lld\n", dev->lastpts, mmal->pts);
+				if (mmal->pts > (dev->lastpts+dev->frame_time_usec+1000))
+					printf("DROPPED FRAME - %lld and %lld, delta %lld\n", dev->lastpts, mmal->pts, dev->lastpts-mmal->pts);
 				dev->lastpts = mmal->pts;
 
 				mmal->flags = MMAL_BUFFER_HEADER_FLAG_FRAME_END;
@@ -2310,6 +2341,49 @@ done:
 	return video_free_buffers(dev);
 }
 
+int video_set_dv_timings(struct device *dev)
+{
+	struct v4l2_dv_timings timings;
+	v4l2_std_id std;
+	int ret;
+
+	memset(&timings, 0, sizeof timings);
+	ret = ioctl(dev->fd, VIDIOC_QUERY_DV_TIMINGS, &timings);
+	if (ret >= 0) {
+		//Can read DV timings, so set them.
+		ret = ioctl(dev->fd, VIDIOC_S_DV_TIMINGS, &timings);
+		if (ret < 0) {
+			printf("Failed to set DV timings\n");
+			return -1;
+		} else {
+			double tot_height, tot_width;
+			const struct v4l2_bt_timings *bt = &timings.bt;
+			
+			tot_height = bt->height +
+				bt->vfrontporch + bt->vsync + bt->vbackporch +
+				bt->il_vfrontporch + bt->il_vsync + bt->il_vbackporch;
+			tot_width = bt->width +
+				bt->hfrontporch + bt->hsync + bt->hbackporch;
+			dev->fps = (unsigned int)((double)bt->pixelclock /
+				(tot_width * tot_height));
+			printf("Framerate is %u\n", dev->fps);
+		}
+	} else {
+		memset(&std, 0, sizeof std);
+		ret = ioctl(dev->fd, VIDIOC_QUERYSTD, &std);
+		if (ret >= 0) {
+			//Can read standard, so set it.
+			ret = ioctl(dev->fd, VIDIOC_S_STD, &std);
+			if (ret < 0) {
+				printf("Failed to set standard\n");
+				return -1;
+			} else {
+			}
+		}
+	}
+	return 0;
+}
+
 #define V4L_BUFFERS_DEFAULT	8
 #define V4L_BUFFERS_MAX		32
 
@@ -2324,6 +2398,7 @@ static void usage(const char *argv0)
 	printf("-d, --delay			Delay (in ms) before requeuing buffers\n");
 	printf("-f, --format format		Set the video format\n");
 	printf("				use -f help to list the supported formats\n");
+	printf("-E, --encode-to [file]		Set filename to write to. Default of file.h264.\n");
 	printf("-F, --file[=name]		Read/write frames from/to disk\n");
 	printf("\tFor video capture devices, the first '#' character in the file name is\n");
 	printf("\texpanded to the frame sequence number. The default file name is\n");
@@ -2339,6 +2414,7 @@ static void usage(const char *argv0)
 	printf("-R, --realtime=[priority]	Enable realtime RR scheduling\n");
 	printf("-s, --size WxH			Set the frame size\n");
 	printf("-t, --time-per-frame num/denom	Set the time per frame (eg. 1/25 = 25 fps)\n");
+	printf("-T, --dv-timings		Query and set the DV timings\n");
 	printf("-u, --userptr			Use the user pointers streaming method\n");
 	printf("-w, --set-control 'ctrl value'	Set control 'ctrl' to 'value'\n");
 	printf("    --buffer-prefix		Write portions of buffer before data_offset\n");
@@ -2384,6 +2460,7 @@ static struct option opts[] = {
 	{"check-overrun", 0, 0, 'C'},
 	{"data-prefix", 0, 0, OPT_DATA_PREFIX},
 	{"delay", 1, 0, 'd'},
+	{"encode-to", 1, 0, 'E'},
 	{"enum-formats", 0, 0, OPT_ENUM_FORMATS},
 	{"enum-inputs", 0, 0, OPT_ENUM_INPUTS},
 	{"fd", 1, 0, OPT_FD},
@@ -2413,6 +2490,7 @@ static struct option opts[] = {
 	{"stride", 1, 0, OPT_STRIDE},
 	{"time-per-frame", 1, 0, 't'},
 	{"timestamp-source", 1, 0, OPT_TSTAMP_SRC},
+	{"dv-timings", 0, 0, 'T'},
 	{"userptr", 0, 0, 'u'},
 	{0, 0, 0, 0}
 };
@@ -2436,6 +2514,7 @@ int main(int argc, char *argv[])
 	int do_rt = 0, do_log_status = 0;
 	int no_query = 0, do_queue_late = 0;
 	int do_mmal_render = 0, do_encode = 0;
+	int do_set_dv_timings = 0;
 	char *endptr;
 	int c;
 
@@ -2470,7 +2549,7 @@ int main(int argc, char *argv[])
 	video_init(&dev);
 
 	opterr = 0;
-	while ((c = getopt_long(argc, argv, "B:c::Cd:E::f:F::hi:Ilmn:pq:r:R::s:t:uw:", opts, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "B:c::Cd:E::f:F::hi:Ilmn:pq:r:R::s:t:Tuw:", opts, NULL)) != -1) {
 
 		switch (c) {
 		case 'B':
@@ -2493,6 +2572,7 @@ int main(int argc, char *argv[])
 			delay = atoi(optarg);
 			break;
 		case 'E':
+			printf("We're encoding to %s\n", optarg);
 			do_encode = 1;
 			if (optarg)
 				encode_filename = optarg;
@@ -2581,6 +2661,9 @@ int main(int argc, char *argv[])
 				printf("Invalid time per frame '%s'\n", optarg);
 				return 1;
 			}
+			break;
+		case 'T':
+			do_set_dv_timings = 1;
 			break;
 		case 'u':
 			memtype = V4L2_MEMORY_USERPTR;
@@ -2743,6 +2826,9 @@ int main(int argc, char *argv[])
 			return 1;
 		}
 	}
+
+	if (do_set_dv_timings)
+		video_set_dv_timings(&dev);
 
 	if (!no_query || do_capture)
 		video_get_format(&dev);
