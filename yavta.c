@@ -198,8 +198,8 @@ static struct v4l2_format_info {
 	{ "RGB555X", V4L2_PIX_FMT_RGB555X, 1,	MMAL_ENCODING_UNUSED },
 	{ "RGB565X", V4L2_PIX_FMT_RGB565X, 1,	MMAL_ENCODING_RGB16 },
 	{ "BGR666", V4L2_PIX_FMT_BGR666, 1,	MMAL_ENCODING_UNUSED },
-	{ "BGR24", V4L2_PIX_FMT_BGR24, 1,	MMAL_ENCODING_BGR24 },
-	{ "RGB24", V4L2_PIX_FMT_RGB24, 1,	MMAL_ENCODING_RGB24 },
+	{ "BGR24", V4L2_PIX_FMT_BGR24, 1,	MMAL_ENCODING_RGB24 },
+	{ "RGB24", V4L2_PIX_FMT_RGB24, 1,	MMAL_ENCODING_BGR24 },
 	{ "BGR32", V4L2_PIX_FMT_BGR32, 1,	MMAL_ENCODING_BGR32 },
 	{ "ABGR32", V4L2_PIX_FMT_ABGR32, 1,	MMAL_ENCODING_BGRA },
 	{ "XBGR32", V4L2_PIX_FMT_XBGR32, 1,	MMAL_ENCODING_BGR32 },
@@ -1719,7 +1719,7 @@ static void encoder_buffer_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buf
 		{
 			printf("No file to save to\n");
 		}
-		if (pts_file_handle)
+		if (pts_file_handle && buffer->pts != MMAL_TIME_UNKNOWN)
 			fprintf(pts_file_handle,"%lld.%03lld\n", buffer->pts/1000, buffer->pts%1000);
 
 		buffer->length = 0;
@@ -2287,7 +2287,7 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 				//MMAL PTS is in usecs, so convert from struct timeval
 				mmal->pts = (pts.tv_sec * 1000000) + pts.tv_usec;
 				if (mmal->pts > (dev->lastpts+dev->frame_time_usec+1000))
-					printf("DROPPED FRAME - %lld and %lld, delta %lld\n", dev->lastpts, mmal->pts, dev->lastpts-mmal->pts);
+					printf("DROPPED FRAME - %lld and %lld, delta %lld\n", dev->lastpts, mmal->pts, mmal->pts-dev->lastpts);
 				dev->lastpts = mmal->pts;
 
 				mmal->flags = MMAL_BUFFER_HEADER_FLAG_FRAME_END;
@@ -2388,9 +2388,38 @@ int video_set_dv_timings(struct device *dev)
 				printf("Failed to set standard\n");
 				return -1;
 			} else {
+				// SD video - assume 50Hz / 25fps
+				dev->fps = 25;
 			}
 		}
 	}
+	return 0;
+}
+
+int video_get_fps(struct device *dev)
+{
+	struct v4l2_streamparm parm;
+	int ret;
+
+	memset(&parm, 0, sizeof parm);
+	parm.type = dev->type;
+
+	ret = ioctl(dev->fd, VIDIOC_G_PARM, &parm);
+	if (ret < 0) {
+		printf("Unable to get frame rate: %s (%d).\n",
+			strerror(errno), errno);
+		/* Make a wild guess at the frame rate */
+		dev->fps = 15;
+		return ret;
+	}
+
+	printf("Current frame rate: %u/%u\n",
+		parm.parm.capture.timeperframe.numerator,
+		parm.parm.capture.timeperframe.denominator);
+
+	dev->fps = parm.parm.capture.timeperframe.numerator/
+			parm.parm.capture.timeperframe.denominator;
+
 	return 0;
 }
 
@@ -2850,6 +2879,8 @@ int main(int argc, char *argv[])
 			return 1;
 		}
 	}
+	if (!dev.fps)
+		video_get_fps(&dev);
 
 	if (do_mmal_render) {
 		setup_mmal(&dev, nbufs, do_encode, encode_filename);
