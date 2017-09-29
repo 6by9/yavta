@@ -6,7 +6,10 @@ Sets up the pipe:
 V4L2 -> isp -> video_splitter -> video_render
                               -> video_encode -> file
 ```
-Example command line: ```./yavta --capture=1000 -n 3 --encode-to=file.h264 -f UYVY -m -T /dev/video0```
+Example command line:
+```
+./yavta --capture=1000 -n 3 --encode-to=file.h264 -f UYVY -m -T /dev/video0
+```
 Captures 1000 frames, 3 V4L2 buffers, encoder to file.h264, sets V4L2 format to UYVY (optional), -m for MMAL,
 -T to set dv-timings (required for TC358743 only).
 
