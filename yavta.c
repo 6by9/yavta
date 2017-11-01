@@ -2196,6 +2196,7 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 	double bps;
 	double fps;
 	int ret;
+	int dropped_frames = 0;
 
 	/* Start streaming. */
 	ret = video_enable(dev, 1);
@@ -2286,8 +2287,10 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 				timersub(&buf.timestamp, &dev->starttime, &pts);
 				//MMAL PTS is in usecs, so convert from struct timeval
 				mmal->pts = (pts.tv_sec * 1000000) + pts.tv_usec;
-				if (mmal->pts > (dev->lastpts+dev->frame_time_usec+1000))
+				if (mmal->pts > (dev->lastpts+dev->frame_time_usec+1000)) {
 					printf("DROPPED FRAME - %lld and %lld, delta %lld\n", dev->lastpts, mmal->pts, mmal->pts-dev->lastpts);
+					dropped_frames++;
+				}
 				dev->lastpts = mmal->pts;
 
 				mmal->flags = MMAL_BUFFER_HEADER_FLAG_FRAME_END;
@@ -2347,6 +2350,7 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 
 	printf("Captured %u frames in %lu.%06lu seconds (%f fps, %f B/s).\n",
 		i, ts.tv_sec, ts.tv_nsec/1000, fps, bps);
+	printf("Total number of frames dropped %d\n", dropped_frames);
 done:
 	return video_free_buffers(dev);
 }
