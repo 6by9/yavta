@@ -1920,7 +1920,7 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 	encoder_input = dev->encoder->input[0];
 	encoder_output = dev->encoder->output[0];
 
-	printf("Create connection isp output to splitter input....\n");
+/*	printf("Create connection isp output to splitter input....\n");
 	status =  mmal_connection_create(&dev->connections[0], isp_output, dev->splitter->input[0], MMAL_CONNECTION_FLAG_TUNNELLING);
 	if(status != MMAL_SUCCESS)
 	{
@@ -1935,9 +1935,9 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 		printf("Failed to create connection status %d: splitter->render\n", status);
 		return -1;
 	}
-
+*/
 	printf("Create connection splitter output2 to encoder input....");
-	status =  mmal_connection_create(&dev->connections[2], dev->splitter->output[1], encoder_input, MMAL_CONNECTION_FLAG_TUNNELLING);
+	status =  mmal_connection_create(&dev->connections[2], isp_output, encoder_input, MMAL_CONNECTION_FLAG_TUNNELLING);
 	if(status != MMAL_SUCCESS)
 	{
 		printf("Failed to create connection status %d: splitter->encoder\n", status);
@@ -2039,7 +2039,7 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 		printf("Failed to set zero copy\n");
 		return -1;
 	}
-
+/*
 	status =  mmal_connection_enable(dev->connections[0]);
 	if (status != MMAL_SUCCESS)
 	{
@@ -2051,7 +2051,7 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 	{
 		return -1;
 	}
-
+*/
 	printf("Enable connection[2]...\n");
 	printf("buffer size is %d bytes, num %d\n", dev->splitter->output[0]->buffer_size, dev->splitter->output[0]->buffer_num);
 	status =  mmal_connection_enable(dev->connections[2]);
