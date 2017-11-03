@@ -86,10 +86,10 @@ struct device
 	struct buffer *buffers;
 
 	MMAL_COMPONENT_T *isp;
-	MMAL_COMPONENT_T *splitter;
 	MMAL_COMPONENT_T *render;
 	MMAL_COMPONENT_T *encoder;
-	MMAL_CONNECTION_T *connections[4];
+	MMAL_POOL_T *connection_pool;
+
 	/* V4L2 to MMAL interface */
 	MMAL_QUEUE_T *isp_queue;
 	MMAL_POOL_T *mmal_pool;
@@ -1733,6 +1733,48 @@ static void encoder_buffer_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buf
 		mmal_buffer_header_release(buffer);
 }
 
+static void buffers_to_isp(struct device *dev)
+{
+	MMAL_BUFFER_HEADER_T *buffer;
+
+	while ((buffer = mmal_queue_get(dev->connection_pool->queue)) != NULL)
+	{
+		mmal_port_send_buffer(dev->isp->output[0], buffer);
+	}
+
+}
+static void isp_output_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
+{
+	printf("Buffer %p from isp, filled %d, timestamp %llu, flags %04X\n", buffer, buffer->length, buffer->pts, buffer->flags);
+	//vcos_log_error("File handle: %p", port->userdata);
+	struct device *dev = (struct device*)port->userdata;
+
+	if (dev->render)
+	{
+		mmal_buffer_header_acquire(buffer);
+		mmal_port_send_buffer(dev->render->input[0], buffer);
+	}
+	if (dev->encoder)
+	{
+		mmal_buffer_header_acquire(buffer);
+		mmal_port_send_buffer(dev->encoder->input[0], buffer);
+	}
+	mmal_buffer_header_release(buffer);
+
+	buffers_to_isp(dev);
+}
+
+static void render_encoder_input_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
+{
+	printf("Buffer %p returned from %s, filled %d, timestamp %llu, flags %04X\n", buffer, port->name, buffer->length, buffer->pts, buffer->flags);
+	//vcos_log_error("File handle: %p", port->userdata);
+	struct device *dev = (struct device*)port->userdata;
+
+	mmal_buffer_header_release(buffer);
+
+	buffers_to_isp(dev);
+}
+
 #define LOG_DEBUG printf
 
 static void dump_port_format(MMAL_ES_FORMAT_T *format)
@@ -1808,13 +1850,6 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 	if(status != MMAL_SUCCESS)
 	{
 		printf("Failed to create isp\n");
-		return -1;
-	}
-
-	status = mmal_component_create("vc.ril.video_splitter", &dev->splitter);
-	if(status != MMAL_SUCCESS)
-	{
-		printf("Failed to create isp");
 		return -1;
 	}
 
@@ -1907,6 +1942,7 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 	mmal_format_copy(dev->isp->output[0]->format, port->format);
 	port = dev->isp->output[0];
 	port->format->encoding = MMAL_ENCODING_I420;
+	port->buffer_num = 3;
 
 	status = mmal_port_format_commit(port);
 	if (status != MMAL_SUCCESS)
@@ -1920,29 +1956,14 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 	encoder_input = dev->encoder->input[0];
 	encoder_output = dev->encoder->output[0];
 
-/*	printf("Create connection isp output to splitter input....\n");
-	status =  mmal_connection_create(&dev->connections[0], isp_output, dev->splitter->input[0], MMAL_CONNECTION_FLAG_TUNNELLING);
-	if(status != MMAL_SUCCESS)
-	{
-		printf("Failed to create connection status %d: isp->splitter\n", status);
-		return -1;
-	}
-
-	printf("Create connection splitter output to render input....\n");
-	status =  mmal_connection_create(&dev->connections[1], dev->splitter->output[0], dev->render->input[0], MMAL_CONNECTION_FLAG_TUNNELLING);
-	if(status != MMAL_SUCCESS)
-	{
-		printf("Failed to create connection status %d: splitter->render\n", status);
-		return -1;
-	}
-*/
-	printf("Create connection splitter output2 to encoder input....");
-	status =  mmal_connection_create(&dev->connections[2], isp_output, encoder_input, MMAL_CONNECTION_FLAG_TUNNELLING);
-	if(status != MMAL_SUCCESS)
-	{
-		printf("Failed to create connection status %d: splitter->encoder\n", status);
-		return -1;
-	}
+	status = mmal_format_full_copy(encoder_input->format, isp_output->format);
+	encoder_input->buffer_num = 3;
+	if (status == MMAL_SUCCESS)
+		status = mmal_port_format_commit(encoder_input);
+	status = mmal_format_full_copy(dev->render->input[0]->format, isp_output->format);
+	dev->render->input[0]->buffer_num = 3;
+	if (status == MMAL_SUCCESS)
+		status = mmal_port_format_commit(dev->render->input[0]);
 
 	// Only supporting H264 at the moment
 	encoder_output->format->encoding = MMAL_ENCODING_H264;
@@ -2011,21 +2032,6 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 		printf("Unable to set format on video encoder input port\n");
 	}
 
-	printf("Enable splitter....\n");
-
-	status = mmal_component_enable(dev->splitter);
-	if(status != MMAL_SUCCESS)
-	{
-		printf("Failed to enable\n");
-		return -1;
-	}
-	status = mmal_port_parameter_set_boolean(dev->splitter->output[0], MMAL_PARAMETER_ZERO_COPY, MMAL_TRUE);
-	if(status != MMAL_SUCCESS)
-	{
-		printf("Failed to set zero copy\n");
-		return -1;
-	}
-
 	printf("Enable encoder....\n");
 	status = mmal_component_enable(dev->encoder);
 	if(status != MMAL_SUCCESS)
@@ -2039,26 +2045,39 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 		printf("Failed to set zero copy\n");
 		return -1;
 	}
-/*
-	status =  mmal_connection_enable(dev->connections[0]);
+
+	status = mmal_port_parameter_set_boolean(isp_output, MMAL_PARAMETER_ZERO_COPY, MMAL_TRUE);
+	status += mmal_port_parameter_set_boolean(dev->render->input[0], MMAL_PARAMETER_ZERO_COPY, MMAL_TRUE);
+	status += mmal_port_parameter_set_boolean(encoder_input, MMAL_PARAMETER_ZERO_COPY, MMAL_TRUE);
 	if (status != MMAL_SUCCESS)
 	{
 		return -1;
 	}
-	printf("Enable connection[1]...\n");
-	status =  mmal_connection_enable(dev->connections[1]);
+
+	isp_output->userdata = (struct MMAL_PORT_USERDATA_T *)dev;
+	dev->render->input[0]->userdata = (struct MMAL_PORT_USERDATA_T *)dev;
+	encoder_input->userdata = (struct MMAL_PORT_USERDATA_T *)dev;
+
+	status = mmal_port_enable(isp_output, isp_output_callback);
 	if (status != MMAL_SUCCESS)
+		return -1;
+
+	status = mmal_port_enable(dev->render->input[0], render_encoder_input_callback);
+	if (status != MMAL_SUCCESS)
+		return -1;
+
+	status = mmal_port_enable(encoder_input, render_encoder_input_callback);
+	if (status != MMAL_SUCCESS)
+		return -1;
+
+	printf("Create pool of %d buffers of size %d for encode/render\n", isp_output->buffer_num, isp_output->buffer_size);
+	dev->connection_pool = mmal_port_pool_create(isp_output, isp_output->buffer_num, isp_output->buffer_size);
+	if(!dev->connection_pool)
 	{
+		printf("Failed to create pool\n");
 		return -1;
 	}
-*/
-	printf("Enable connection[2]...\n");
-	printf("buffer size is %d bytes, num %d\n", dev->splitter->output[0]->buffer_size, dev->splitter->output[0]->buffer_num);
-	status =  mmal_connection_enable(dev->connections[2]);
-	if (status != MMAL_SUCCESS)
-	{
-		return -1;
-	}
+	buffers_to_isp(dev);
 
 	// open h264 file and put the file handle in userdata for the encoder output port
 	if (do_encode)
