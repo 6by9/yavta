@@ -1745,7 +1745,7 @@ static void buffers_to_isp(struct device *dev)
 }
 static void isp_output_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
 {
-	printf("Buffer %p from isp, filled %d, timestamp %llu, flags %04X\n", buffer, buffer->length, buffer->pts, buffer->flags);
+	//printf("Buffer %p from isp, filled %d, timestamp %llu, flags %04X\n", buffer, buffer->length, buffer->pts, buffer->flags);
 	//vcos_log_error("File handle: %p", port->userdata);
 	struct device *dev = (struct device*)port->userdata;
 
@@ -1766,7 +1766,7 @@ static void isp_output_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
 
 static void render_encoder_input_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
 {
-	printf("Buffer %p returned from %s, filled %d, timestamp %llu, flags %04X\n", buffer, port->name, buffer->length, buffer->pts, buffer->flags);
+	//printf("Buffer %p returned from %s, filled %d, timestamp %llu, flags %04X\n", buffer, port->name, buffer->length, buffer->pts, buffer->flags);
 	//vcos_log_error("File handle: %p", port->userdata);
 	struct device *dev = (struct device*)port->userdata;
 
