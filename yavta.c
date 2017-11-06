@@ -88,7 +88,9 @@ struct device
 	MMAL_COMPONENT_T *isp;
 	MMAL_COMPONENT_T *render;
 	MMAL_COMPONENT_T *encoder;
-	MMAL_POOL_T *connection_pool;
+	MMAL_POOL_T *isp_output_pool;
+	MMAL_POOL_T *render_pool;
+	MMAL_POOL_T *encode_pool;
 
 	/* V4L2 to MMAL interface */
 	MMAL_QUEUE_T *isp_queue;
@@ -1737,7 +1739,7 @@ static void buffers_to_isp(struct device *dev)
 {
 	MMAL_BUFFER_HEADER_T *buffer;
 
-	while ((buffer = mmal_queue_get(dev->connection_pool->queue)) != NULL)
+	while ((buffer = mmal_queue_get(dev->isp_output_pool->queue)) != NULL)
 	{
 		mmal_port_send_buffer(dev->isp->output[0], buffer);
 	}
@@ -1751,13 +1753,21 @@ static void isp_output_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
 
 	if (dev->render)
 	{
-		mmal_buffer_header_acquire(buffer);
-		mmal_port_send_buffer(dev->render->input[0], buffer);
+		MMAL_BUFFER_HEADER_T *out = mmal_queue_get(dev->render_pool->queue);
+		if (out)
+		{
+			mmal_buffer_header_replicate(out, buffer);
+			mmal_port_send_buffer(dev->render->input[0], out);
+		}
 	}
 	if (dev->encoder)
 	{
-		mmal_buffer_header_acquire(buffer);
-		mmal_port_send_buffer(dev->encoder->input[0], buffer);
+		MMAL_BUFFER_HEADER_T *out = mmal_queue_get(dev->encode_pool->queue);
+		if (out)
+		{
+			mmal_buffer_header_replicate(out, buffer);
+			mmal_port_send_buffer(dev->encoder->input[0], out);
+		}
 	}
 	mmal_buffer_header_release(buffer);
 
@@ -2071,10 +2081,24 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 		return -1;
 
 	printf("Create pool of %d buffers of size %d for encode/render\n", isp_output->buffer_num, isp_output->buffer_size);
-	dev->connection_pool = mmal_port_pool_create(isp_output, isp_output->buffer_num, isp_output->buffer_size);
-	if(!dev->connection_pool)
+	dev->isp_output_pool = mmal_port_pool_create(isp_output, isp_output->buffer_num, isp_output->buffer_size);
+	if(!dev->isp_output_pool)
 	{
 		printf("Failed to create pool\n");
+		return -1;
+	}
+	printf("Create pool of %d buffers of size %d for render\n", dev->render->input[0]->buffer_num, 0);
+	dev->render_pool = mmal_port_pool_create(dev->render->input[0], dev->render->input[0]->buffer_num, dev->render->input[0]->buffer_size);
+	if(!dev->render_pool)
+	{
+		printf("Failed to create render pool\n");
+		return -1;
+	}
+	printf("Create pool of %d buffers of size %d for encode ip\n", encoder_input->buffer_num, 0);
+	dev->encode_pool = mmal_port_pool_create(encoder_input, isp_output->buffer_num, isp_output->buffer_size);
+	if(!dev->encode_pool)
+	{
+		printf("Failed to create encode ip pool\n");
 		return -1;
 	}
 	buffers_to_isp(dev);
