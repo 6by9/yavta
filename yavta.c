@@ -1721,7 +1721,9 @@ static void encoder_buffer_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buf
 		{
 			printf("No file to save to\n");
 		}
-		if (pts_file_handle && buffer->pts != MMAL_TIME_UNKNOWN)
+		if (pts_file_handle &&
+		    !(buffer->flags & MMAL_BUFFER_HEADER_FLAG_CONFIG) &&
+		    buffer->pts != MMAL_TIME_UNKNOWN)
 			fprintf(pts_file_handle,"%lld.%03lld\n", buffer->pts/1000, buffer->pts%1000);
 
 		buffer->length = 0;
