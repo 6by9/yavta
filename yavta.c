@@ -57,6 +57,9 @@
 
 #define VCSM_IMPORT_DMABUF MMAL_TRUE
 
+int debug = 1;
+#define print(...) do { if (debug) printf(__VA_ARGS__); }  while (0)
+
 enum buffer_fill_mode
 {
 	BUFFER_FILL_NONE = 0,
@@ -264,7 +267,7 @@ static void list_formats(void)
 	unsigned int i;
 
 	for (i = 0; i < ARRAY_SIZE(pixel_formats); i++)
-		printf("%s (\"%c%c%c%c\", %u planes)\n",
+		print("%s (\"%c%c%c%c\", %u planes)\n",
 		       pixel_formats[i].name,
 		       pixel_formats[i].fourcc & 0xff,
 		       (pixel_formats[i].fourcc >> 8) & 0xff,
@@ -395,7 +398,7 @@ static bool video_has_fd(struct device *dev)
 static int video_set_fd(struct device *dev, int fd)
 {
 	if (video_has_fd(dev)) {
-		printf("Can't set fd (already open).\n");
+		print("Can't set fd (already open).\n");
 		return -1;
 	}
 
@@ -407,18 +410,18 @@ static int video_set_fd(struct device *dev, int fd)
 static int video_open(struct device *dev, const char *devname)
 {
 	if (video_has_fd(dev)) {
-		printf("Can't open device (already open).\n");
+		print("Can't open device (already open).\n");
 		return -1;
 	}
 
 	dev->fd = open(devname, O_RDWR);
 	if (dev->fd < 0) {
-		printf("Error opening device %s: %s (%d).\n", devname,
+		print("Error opening device %s: %s (%d).\n", devname,
 		       strerror(errno), errno);
 		return dev->fd;
 	}
 
-	printf("Device %s opened.\n", devname);
+	print("Device %s opened.\n", devname);
 
 	dev->opened = 1;
 
@@ -439,7 +442,7 @@ static int video_querycap(struct device *dev, unsigned int *capabilities)
 	caps = cap.capabilities & V4L2_CAP_DEVICE_CAPS
 	     ? cap.device_caps : cap.capabilities;
 
-	printf("Device `%s' on `%s' (driver '%s') is a video %s (%s mplanes) device.\n",
+	print("Device `%s' on `%s' (driver '%s') is a video %s (%s mplanes) device.\n",
 		cap.card, cap.bus_info, cap.driver,
 		caps & (V4L2_CAP_VIDEO_CAPTURE_MPLANE | V4L2_CAP_VIDEO_CAPTURE) ? "capture" : "output",
 		caps & (V4L2_CAP_VIDEO_CAPTURE_MPLANE | V4L2_CAP_VIDEO_OUTPUT_MPLANE) ? "with" : "without");
@@ -460,7 +463,7 @@ static int cap_get_buf_type(unsigned int capabilities)
 	} else if (capabilities & V4L2_CAP_VIDEO_OUTPUT) {
 		return V4L2_BUF_TYPE_VIDEO_OUTPUT;
 	} else {
-		printf("Device supports neither capture nor output.\n");
+		print("Device supports neither capture nor output.\n");
 		return -EINVAL;
 	}
 
@@ -494,7 +497,7 @@ static int query_control(struct device *dev, unsigned int id,
 
 	ret = ioctl(dev->fd, VIDIOC_QUERYCTRL, query);
 	if (ret < 0 && errno != EINVAL)
-		printf("unable to query control 0x%8.8x: %s (%d).\n",
+		print("unable to query control 0x%8.8x: %s (%d).\n",
 		       id, strerror(errno), errno);
 
 	return ret;
@@ -540,7 +543,7 @@ static int get_control(struct device *dev, const struct v4l2_queryctrl *query,
 		}
 	}
 
-	printf("unable to get control 0x%8.8x: %s (%d).\n",
+	print("unable to get control 0x%8.8x: %s (%d).\n",
 		query->id, strerror(errno), errno);
 	return -1;
 }
@@ -591,12 +594,12 @@ static void set_control(struct device *dev, unsigned int id,
 			val = old.value;
 	}
 	if (ret == -1) {
-		printf("unable to set control 0x%8.8x: %s (%d).\n",
+		print("unable to set control 0x%8.8x: %s (%d).\n",
 			id, strerror(errno), errno);
 		return;
 	}
 
-	printf("Control 0x%08x set to %" PRId64 ", is %" PRId64 "\n",
+	print("Control 0x%08x set to %" PRId64 ", is %" PRId64 "\n",
 	       id, old_val, val);
 }
 
@@ -611,7 +614,7 @@ static int video_get_format(struct device *dev)
 
 	ret = ioctl(dev->fd, VIDIOC_G_FMT, &fmt);
 	if (ret < 0) {
-		printf("Unable to get format: %s (%d).\n", strerror(errno),
+		print("Unable to get format: %s (%d).\n", strerror(errno),
 			errno);
 		return ret;
 	}
@@ -621,7 +624,7 @@ static int video_get_format(struct device *dev)
 		dev->height = fmt.fmt.pix_mp.height;
 		dev->num_planes = fmt.fmt.pix_mp.num_planes;
 
-		printf("Video format: %s (%08x) %ux%u field %s, %u planes: \n",
+		print("Video format: %s (%08x) %ux%u field %s, %u planes: \n",
 			v4l2_format_name(fmt.fmt.pix_mp.pixelformat), fmt.fmt.pix_mp.pixelformat,
 			fmt.fmt.pix_mp.width, fmt.fmt.pix_mp.height,
 			v4l2_field_name(fmt.fmt.pix_mp.field),
@@ -634,7 +637,7 @@ static int video_get_format(struct device *dev)
 					fmt.fmt.pix_mp.plane_fmt[i].bytesperline ?
 						fmt.fmt.pix_mp.plane_fmt[i].sizeimage : 0;
 
-			printf(" * Stride %u, buffer size %u\n",
+			print(" * Stride %u, buffer size %u\n",
 				fmt.fmt.pix_mp.plane_fmt[i].bytesperline,
 				fmt.fmt.pix_mp.plane_fmt[i].sizeimage);
 		}
@@ -646,7 +649,7 @@ static int video_get_format(struct device *dev)
 		dev->plane_fmt[0].bytesperline = fmt.fmt.pix.bytesperline;
 		dev->plane_fmt[0].sizeimage = fmt.fmt.pix.bytesperline ? fmt.fmt.pix.sizeimage : 0;
 
-		printf("Video format: %s (%08x) %ux%u (stride %u) field %s buffer size %u\n",
+		print("Video format: %s (%08x) %ux%u (stride %u) field %s buffer size %u\n",
 			v4l2_format_name(fmt.fmt.pix.pixelformat), fmt.fmt.pix.pixelformat,
 			fmt.fmt.pix.width, fmt.fmt.pix.height, fmt.fmt.pix.bytesperline,
 			v4l2_field_name(fmt.fmt.pix_mp.field),
@@ -709,10 +712,10 @@ static int video_set_format(struct device *dev, unsigned int w, unsigned int h,
 		fmt.fmt.pix.height = h;
 		fmt.fmt.pix.pixelformat = format;
 		fmt.fmt.pix.field = field;
-		printf("stride is %d\n",stride);
+		print("stride is %d\n",stride);
 		if (!stride)
 			stride = ((w+31) &~31)*format_bpp(format);
-		printf("stride is now %d\n",stride);
+		print("stride is now %d\n",stride);
 		fmt.fmt.pix.bytesperline = stride;
 		fmt.fmt.pix.sizeimage = buffer_size;
 		fmt.fmt.pix.priv = V4L2_PIX_FMT_PRIV_MAGIC;
@@ -721,25 +724,25 @@ static int video_set_format(struct device *dev, unsigned int w, unsigned int h,
 
 	ret = ioctl(dev->fd, VIDIOC_S_FMT, &fmt);
 	if (ret < 0) {
-		printf("Unable to set format: %s (%d).\n", strerror(errno),
+		print("Unable to set format: %s (%d).\n", strerror(errno),
 			errno);
 		return ret;
 	}
 
 	if (video_is_mplane(dev)) {
-		printf("Video format set: %s (%08x) %ux%u field %s, %u planes: \n",
+		print("Video format set: %s (%08x) %ux%u field %s, %u planes: \n",
 			v4l2_format_name(fmt.fmt.pix_mp.pixelformat), fmt.fmt.pix_mp.pixelformat,
 			fmt.fmt.pix_mp.width, fmt.fmt.pix_mp.height,
 			v4l2_field_name(fmt.fmt.pix_mp.field),
 			fmt.fmt.pix_mp.num_planes);
 
 		for (i = 0; i < fmt.fmt.pix_mp.num_planes; i++) {
-			printf(" * Stride %u, buffer size %u\n",
+			print(" * Stride %u, buffer size %u\n",
 				fmt.fmt.pix_mp.plane_fmt[i].bytesperline,
 				fmt.fmt.pix_mp.plane_fmt[i].sizeimage);
 		}
 	} else {
-		printf("Video format set: %s (%08x) %ux%u (stride %u) field %s buffer size %u\n",
+		print("Video format set: %s (%08x) %ux%u (stride %u) field %s buffer size %u\n",
 			v4l2_format_name(fmt.fmt.pix.pixelformat), fmt.fmt.pix.pixelformat,
 			fmt.fmt.pix.width, fmt.fmt.pix.height, fmt.fmt.pix.bytesperline,
 			v4l2_field_name(fmt.fmt.pix.field),
@@ -759,16 +762,16 @@ static int video_set_framerate(struct device *dev, struct v4l2_fract *time_per_f
 
 	ret = ioctl(dev->fd, VIDIOC_G_PARM, &parm);
 	if (ret < 0) {
-		printf("Unable to get frame rate: %s (%d).\n",
+		print("Unable to get frame rate: %s (%d).\n",
 			strerror(errno), errno);
 		return ret;
 	}
 
-	printf("Current frame rate: %u/%u\n",
+	print("Current frame rate: %u/%u\n",
 		parm.parm.capture.timeperframe.numerator,
 		parm.parm.capture.timeperframe.denominator);
 
-	printf("Setting frame rate to: %u/%u\n",
+	print("Setting frame rate to: %u/%u\n",
 		time_per_frame->numerator,
 		time_per_frame->denominator);
 
@@ -777,19 +780,19 @@ static int video_set_framerate(struct device *dev, struct v4l2_fract *time_per_f
 
 	ret = ioctl(dev->fd, VIDIOC_S_PARM, &parm);
 	if (ret < 0) {
-		printf("Unable to set frame rate: %s (%d).\n", strerror(errno),
+		print("Unable to set frame rate: %s (%d).\n", strerror(errno),
 			errno);
 		return ret;
 	}
 
 	ret = ioctl(dev->fd, VIDIOC_G_PARM, &parm);
 	if (ret < 0) {
-		printf("Unable to get frame rate: %s (%d).\n", strerror(errno),
+		print("Unable to get frame rate: %s (%d).\n", strerror(errno),
 			errno);
 		return ret;
 	}
 
-	printf("Frame rate set: %u/%u\n",
+	print("Frame rate set: %u/%u\n",
 		parm.parm.capture.timeperframe.numerator,
 		parm.parm.capture.timeperframe.denominator);
 	return 0;
@@ -805,14 +808,14 @@ static int buffer_export(int v4l2fd, enum v4l2_buf_type bt, int index, int *dmaf
 	expbuf.index = index;
 	if (ioctl(v4l2fd, VIDIOC_EXPBUF, &expbuf))
 	{
-		printf("Failed to EXPBUF\n");
+		print("Failed to EXPBUF\n");
 		return -1;
 	}
 	*dmafd = expbuf.fd;
 
-	printf("Importing DMABUF %d into VCSM...\n", expbuf.fd);
+	print("Importing DMABUF %d into VCSM...\n", expbuf.fd);
 	vcsm_handle = vcsm_import_dmabuf(expbuf.fd, "V4L2 buf");
-	printf("...done. vcsm_handle %u\n", vcsm_handle);
+	print("...done. vcsm_handle %u\n", vcsm_handle);
 	*vcsm_hdl = vcsm_handle;
 	return 0;
 }
@@ -836,7 +839,7 @@ static int video_buffer_mmap(struct device *dev, struct buffer *buffer,
 		buffer->mem[i] = mmap(0, length, PROT_READ | PROT_WRITE, MAP_SHARED,
 				      dev->fd, offset);
 		if (buffer->mem[i] == MAP_FAILED) {
-			printf("Unable to map buffer %u/%u: %s (%d)\n",
+			print("Unable to map buffer %u/%u: %s (%d)\n",
 			       buffer->idx, i, strerror(errno), errno);
 			return -1;
 		}
@@ -844,7 +847,7 @@ static int video_buffer_mmap(struct device *dev, struct buffer *buffer,
 		buffer->size[i] = length;
 		buffer->padding[i] = 0;
 
-		printf("Buffer %u/%u mapped at address %p.\n",
+		print("Buffer %u/%u mapped at address %p.\n",
 		       buffer->idx, i, buffer->mem[i]);
 	}
 
@@ -859,7 +862,7 @@ static int video_buffer_munmap(struct device *dev, struct buffer *buffer)
 	for (i = 0; i < dev->num_planes; i++) {
 		ret = munmap(buffer->mem[i], buffer->size[i]);
 		if (ret < 0) {
-			printf("Unable to unmap buffer %u/%u: %s (%d)\n",
+			print("Unable to unmap buffer %u/%u: %s (%d)\n",
 			       buffer->idx, i, strerror(errno), errno);
 		}
 
@@ -887,7 +890,7 @@ static int video_buffer_alloc_userptr(struct device *dev, struct buffer *buffer,
 		ret = posix_memalign(&buffer->mem[i], page_size,
 				     length + offset + padding);
 		if (ret < 0) {
-			printf("Unable to allocate buffer %u/%u (%d)\n",
+			print("Unable to allocate buffer %u/%u (%d)\n",
 			       buffer->idx, i, ret);
 			return -ENOMEM;
 		}
@@ -896,7 +899,7 @@ static int video_buffer_alloc_userptr(struct device *dev, struct buffer *buffer,
 		buffer->size[i] = length;
 		buffer->padding[i] = padding;
 
-		printf("Buffer %u/%u allocated at address %p.\n",
+		print("Buffer %u/%u allocated at address %p.\n",
 		       buffer->idx, i, buffer->mem[i]);
 	}
 
@@ -971,12 +974,12 @@ static int video_alloc_buffers(struct device *dev, int nbufs,
 
 	ret = ioctl(dev->fd, VIDIOC_REQBUFS, &rb);
 	if (ret < 0) {
-		printf("Unable to request buffers: %s (%d).\n", strerror(errno),
+		print("Unable to request buffers: %s (%d).\n", strerror(errno),
 			errno);
 		return ret;
 	}
 
-	printf("%u buffers requested.\n", rb.count);
+	print("%u buffers requested.\n", rb.count);
 
 	buffers = malloc(rb.count * sizeof buffers[0]);
 	if (buffers == NULL)
@@ -997,12 +1000,12 @@ static int video_alloc_buffers(struct device *dev, int nbufs,
 
 		ret = ioctl(dev->fd, VIDIOC_QUERYBUF, &buf);
 		if (ret < 0) {
-			printf("Unable to query buffer %u: %s (%d).\n", i,
+			print("Unable to query buffer %u: %s (%d).\n", i,
 				strerror(errno), errno);
 			return ret;
 		}
 		get_ts_flags(buf.flags, &ts_type, &ts_source);
-		printf("length: %u offset: %u timestamp type/source: %s/%s\n",
+		print("length: %u offset: %u timestamp type/source: %s/%s\n",
 		       buf.length, buf.m.offset, ts_type, ts_source);
 
 		buffers[i].idx = i;
@@ -1025,13 +1028,13 @@ static int video_alloc_buffers(struct device *dev, int nbufs,
 
 		if (VCSM_IMPORT_DMABUF && !buffer_export(dev->fd, dev->type, i, &buffers[i].dma_fd, &buffers[i].vcsm_handle))
 		{
-			printf("Exported buffer %d to dmabuf %d, vcsm handle %u\n", i, buffers[i].dma_fd, buffers[i].vcsm_handle);
+			print("Exported buffer %d to dmabuf %d, vcsm handle %u\n", i, buffers[i].dma_fd, buffers[i].vcsm_handle);
 		}
 		if (dev->mmal_pool) {
 			MMAL_BUFFER_HEADER_T *mmal_buf;
 			mmal_buf = mmal_queue_get(dev->mmal_pool->queue);
 			if (!mmal_buf) {
-				printf("Failed to get a buffer from the pool. Queue length %d\n", mmal_queue_length(dev->mmal_pool->queue));
+				print("Failed to get a buffer from the pool. Queue length %d\n", mmal_queue_length(dev->mmal_pool->queue));
 				return -1;
 			}
 			mmal_buf->user_data = &buffers[i];
@@ -1042,7 +1045,7 @@ static int video_alloc_buffers(struct device *dev, int nbufs,
 				mmal_buf->data = buffers[i].mem[0];
 			mmal_buf->alloc_size = buf.length;
 			buffers[i].mmal = mmal_buf;
-			printf("Linking V4L2 buffer index %d ptr %p to MMAL header %p. mmal->data 0x%X\n",
+			print("Linking V4L2 buffer index %d ptr %p to MMAL header %p. mmal->data 0x%X\n",
 				i, &buffers[i], mmal_buf, (uint32_t)mmal_buf->data);
 			/* Put buffer back in the pool */
 			mmal_buffer_header_release(mmal_buf);
@@ -1069,12 +1072,12 @@ static int video_free_buffers(struct device *dev)
 		case V4L2_MEMORY_MMAP:
 			if (dev->buffers[i].vcsm_handle)
 			{
-				printf("Releasing vcsm handle %u\n", dev->buffers[i].vcsm_handle);
+				print("Releasing vcsm handle %u\n", dev->buffers[i].vcsm_handle);
 				vcsm_free(dev->buffers[i].vcsm_handle);
 			}
 			if (dev->buffers[i].dma_fd)
 			{
-				printf("Closing dma_buf %d\n", dev->buffers[i].dma_fd);
+				print("Closing dma_buf %d\n", dev->buffers[i].dma_fd);
 				close(dev->buffers[i].dma_fd);
 			}
 			ret = video_buffer_munmap(dev, &dev->buffers[i]);
@@ -1096,12 +1099,12 @@ static int video_free_buffers(struct device *dev)
 
 	ret = ioctl(dev->fd, VIDIOC_REQBUFS, &rb);
 	if (ret < 0) {
-		printf("Unable to release buffers: %s (%d).\n",
+		print("Unable to release buffers: %s (%d).\n",
 			strerror(errno), errno);
 		return ret;
 	}
 
-	printf("%u buffers released.\n", dev->nbufs);
+	print("%u buffers released.\n", dev->nbufs);
 
 	free(dev->buffers);
 	dev->nbufs = 0;
@@ -1176,7 +1179,7 @@ static int video_queue_buffer(struct device *dev, int index, enum buffer_fill_mo
 
 	ret = ioctl(dev->fd, VIDIOC_QBUF, &buf);
 	if (ret < 0)
-		printf("Unable to queue buffer: %s (%d).\n",
+		print("Unable to queue buffer: %s (%d).\n",
 			strerror(errno), errno);
 
 	return ret;
@@ -1189,7 +1192,7 @@ static int video_enable(struct device *dev, int enable)
 
 	ret = ioctl(dev->fd, enable ? VIDIOC_STREAMON : VIDIOC_STREAMOFF, &type);
 	if (ret < 0) {
-		printf("Unable to %s streaming: %s (%d).\n",
+		print("Unable to %s streaming: %s (%d).\n",
 			enable ? "start" : "stop", strerror(errno), errno);
 		return ret;
 	}
@@ -1211,10 +1214,10 @@ static void video_query_menu(struct device *dev, struct v4l2_queryctrl *query,
 			continue;
 
 		if (query->type == V4L2_CTRL_TYPE_MENU)
-			printf("  %u: %.32s%s\n", menu.index, menu.name,
+			print("  %u: %.32s%s\n", menu.index, menu.name,
 			       menu.index == value ? " (*)" : "");
 		else
-			printf("  %u: %lld%s\n", menu.index, menu.value,
+			print("  %u: %lld%s\n", menu.index, menu.value,
 			       menu.index == value ? " (*)" : "");
 	};
 }
@@ -1235,7 +1238,7 @@ static int video_print_control(struct device *dev, unsigned int id, bool full)
 		return query.id;
 
 	if (query.type == V4L2_CTRL_TYPE_CTRL_CLASS) {
-		printf("--- %s (class 0x%08x) ---\n", query.name, query.id);
+		print("--- %s (class 0x%08x) ---\n", query.name, query.id);
 		return query.id;
 	}
 
@@ -1250,11 +1253,11 @@ static int video_print_control(struct device *dev, unsigned int id, bool full)
 		sprintf(sval, "%d", ctrl.value);
 
 	if (full)
-		printf("control 0x%08x `%s' min %d max %d step %d default %d current %s.\n",
+		print("control 0x%08x `%s' min %d max %d step %d default %d current %s.\n",
 			query.id, query.name, query.minimum, query.maximum,
 			query.step, query.default_value, current);
 	else
-		printf("control 0x%08x current %s.\n", query.id, current);
+		print("control 0x%08x current %s.\n", query.id, current);
 
 	if (query.type == V4L2_CTRL_TYPE_STRING)
 		free(ctrl.string);
@@ -1295,9 +1298,9 @@ static void video_list_controls(struct device *dev)
 	}
 
 	if (nctrls)
-		printf("%u control%s found.\n", nctrls, nctrls > 1 ? "s" : "");
+		print("%u control%s found.\n", nctrls, nctrls > 1 ? "s" : "");
 	else
-		printf("No control found.\n");
+		print("No control found.\n");
 }
 
 static void video_enum_frame_intervals(struct device *dev, __u32 pixelformat,
@@ -1318,30 +1321,30 @@ static void video_enum_frame_intervals(struct device *dev, __u32 pixelformat,
 			break;
 
 		if (i != ival.index)
-			printf("Warning: driver returned wrong ival index "
+			print("Warning: driver returned wrong ival index "
 				"%u.\n", ival.index);
 		if (pixelformat != ival.pixel_format)
-			printf("Warning: driver returned wrong ival pixel "
+			print("Warning: driver returned wrong ival pixel "
 				"format %08x.\n", ival.pixel_format);
 		if (width != ival.width)
-			printf("Warning: driver returned wrong ival width "
+			print("Warning: driver returned wrong ival width "
 				"%u.\n", ival.width);
 		if (height != ival.height)
-			printf("Warning: driver returned wrong ival height "
+			print("Warning: driver returned wrong ival height "
 				"%u.\n", ival.height);
 
 		if (i != 0)
-			printf(", ");
+			print(", ");
 
 		switch (ival.type) {
 		case V4L2_FRMIVAL_TYPE_DISCRETE:
-			printf("%u/%u",
+			print("%u/%u",
 				ival.discrete.numerator,
 				ival.discrete.denominator);
 			break;
 
 		case V4L2_FRMIVAL_TYPE_CONTINUOUS:
-			printf("%u/%u - %u/%u",
+			print("%u/%u - %u/%u",
 				ival.stepwise.min.numerator,
 				ival.stepwise.min.denominator,
 				ival.stepwise.max.numerator,
@@ -1349,7 +1352,7 @@ static void video_enum_frame_intervals(struct device *dev, __u32 pixelformat,
 			return;
 
 		case V4L2_FRMIVAL_TYPE_STEPWISE:
-			printf("%u/%u - %u/%u (by %u/%u)",
+			print("%u/%u - %u/%u (by %u/%u)",
 				ival.stepwise.min.numerator,
 				ival.stepwise.min.denominator,
 				ival.stepwise.max.numerator,
@@ -1379,23 +1382,23 @@ static void video_enum_frame_sizes(struct device *dev, __u32 pixelformat)
 			break;
 
 		if (i != frame.index)
-			printf("Warning: driver returned wrong frame index "
+			print("Warning: driver returned wrong frame index "
 				"%u.\n", frame.index);
 		if (pixelformat != frame.pixel_format)
-			printf("Warning: driver returned wrong frame pixel "
+			print("Warning: driver returned wrong frame pixel "
 				"format %08x.\n", frame.pixel_format);
 
 		switch (frame.type) {
 		case V4L2_FRMSIZE_TYPE_DISCRETE:
-			printf("\tFrame size: %ux%u (", frame.discrete.width,
+			print("\tFrame size: %ux%u (", frame.discrete.width,
 				frame.discrete.height);
 			video_enum_frame_intervals(dev, frame.pixel_format,
 				frame.discrete.width, frame.discrete.height);
-			printf(")\n");
+			print(")\n");
 			break;
 
 		case V4L2_FRMSIZE_TYPE_CONTINUOUS:
-			printf("\tFrame size: %ux%u - %ux%u (",
+			print("\tFrame size: %ux%u - %ux%u (",
 				frame.stepwise.min_width,
 				frame.stepwise.min_height,
 				frame.stepwise.max_width,
@@ -1403,11 +1406,11 @@ static void video_enum_frame_sizes(struct device *dev, __u32 pixelformat)
 			video_enum_frame_intervals(dev, frame.pixel_format,
 				frame.stepwise.max_width,
 				frame.stepwise.max_height);
-			printf(")\n");
+			print(")\n");
 			break;
 
 		case V4L2_FRMSIZE_TYPE_STEPWISE:
-			printf("\tFrame size: %ux%u - %ux%u (by %ux%u) (\n",
+			print("\tFrame size: %ux%u - %ux%u (by %ux%u) (\n",
 				frame.stepwise.min_width,
 				frame.stepwise.min_height,
 				frame.stepwise.max_width,
@@ -1417,7 +1420,7 @@ static void video_enum_frame_sizes(struct device *dev, __u32 pixelformat)
 			video_enum_frame_intervals(dev, frame.pixel_format,
 				frame.stepwise.max_width,
 				frame.stepwise.max_height);
-			printf(")\n");
+			print(")\n");
 			break;
 
 		default:
@@ -1441,19 +1444,19 @@ static void video_enum_formats(struct device *dev, enum v4l2_buf_type type)
 			break;
 
 		if (i != fmt.index)
-			printf("Warning: driver returned wrong format index "
+			print("Warning: driver returned wrong format index "
 				"%u.\n", fmt.index);
 		if (type != fmt.type)
-			printf("Warning: driver returned wrong format type "
+			print("Warning: driver returned wrong format type "
 				"%u.\n", fmt.type);
 
-		printf("\tFormat %u: %s (%08x)\n", i,
+		print("\tFormat %u: %s (%08x)\n", i,
 			v4l2_format_name(fmt.pixelformat), fmt.pixelformat);
-		printf("\tType: %s (%u)\n", v4l2_buf_type_name(fmt.type),
+		print("\tType: %s (%u)\n", v4l2_buf_type_name(fmt.type),
 			fmt.type);
-		printf("\tName: %.32s\n", fmt.description);
+		print("\tName: %.32s\n", fmt.description);
 		video_enum_frame_sizes(dev, fmt.pixelformat);
-		printf("\n");
+		print("\n");
 	}
 }
 
@@ -1471,13 +1474,13 @@ static void video_enum_inputs(struct device *dev)
 			break;
 
 		if (i != input.index)
-			printf("Warning: driver returned wrong input index "
+			print("Warning: driver returned wrong input index "
 				"%u.\n", input.index);
 
-		printf("\tInput %u: %s.\n", i, input.name);
+		print("\tInput %u: %s.\n", i, input.name);
 	}
 
-	printf("\n");
+	print("\n");
 }
 
 static int video_get_input(struct device *dev)
@@ -1487,7 +1490,7 @@ static int video_get_input(struct device *dev)
 
 	ret = ioctl(dev->fd, VIDIOC_G_INPUT, &input);
 	if (ret < 0) {
-		printf("Unable to get current input: %s (%d).\n",
+		print("Unable to get current input: %s (%d).\n",
 			strerror(errno), errno);
 		return ret;
 	}
@@ -1502,7 +1505,7 @@ static int video_set_input(struct device *dev, unsigned int input)
 
 	ret = ioctl(dev->fd, VIDIOC_S_INPUT, &_input);
 	if (ret < 0)
-		printf("Unable to select input %u: %s (%d).\n", input,
+		print("Unable to select input %u: %s (%d).\n", input,
 			strerror(errno), errno);
 
 	return ret;
@@ -1521,14 +1524,14 @@ static int video_set_quality(struct device *dev, unsigned int quality)
 
 	ret = ioctl(dev->fd, VIDIOC_S_JPEGCOMP, &jpeg);
 	if (ret < 0) {
-		printf("Unable to set quality to %u: %s (%d).\n", quality,
+		print("Unable to set quality to %u: %s (%d).\n", quality,
 			strerror(errno), errno);
 		return ret;
 	}
 
 	ret = ioctl(dev->fd, VIDIOC_G_JPEGCOMP, &jpeg);
 	if (ret >= 0)
-		printf("Quality set to %u\n", jpeg.quality);
+		print("Quality set to %u\n", jpeg.quality);
 
 	return 0;
 }
@@ -1543,7 +1546,7 @@ static int video_load_test_pattern(struct device *dev, const char *filename)
 	if (filename != NULL) {
 		fd = open(filename, O_RDONLY);
 		if (fd == -1) {
-			printf("Unable to open test pattern file '%s': %s (%d).\n",
+			print("Unable to open test pattern file '%s': %s (%d).\n",
 				filename, strerror(errno), errno);
 			return -errno;
 		}
@@ -1561,7 +1564,7 @@ static int video_load_test_pattern(struct device *dev, const char *filename)
 		if (filename != NULL) {
 			ret = read(fd, dev->pattern[plane], size);
 			if (ret != (int)size && dev->plane_fmt[plane].bytesperline != 0) {
-				printf("Test pattern file size %u doesn't match image size %u\n",
+				print("Test pattern file size %u doesn't match image size %u\n",
 					ret, size);
 				ret = -EINVAL;
 				goto done;
@@ -1571,7 +1574,7 @@ static int video_load_test_pattern(struct device *dev, const char *filename)
 			unsigned int i;
 
 			if (dev->plane_fmt[plane].bytesperline == 0) {
-				printf("Compressed format detected for plane %u and no test pattern filename given.\n"
+				print("Compressed format detected for plane %u and no test pattern filename given.\n"
 					"The test pattern can't be generated automatically.\n", plane);
 				ret = -EINVAL;
 				goto done;
@@ -1645,10 +1648,10 @@ static void video_verify_buffer(struct device *dev, struct v4l2_buffer *buf)
 		else
 			length = buf->bytesused;
 
-		if (dev->plane_fmt[plane].sizeimage &&
+		/*if (dev->plane_fmt[plane].sizeimage &&
 		    dev->plane_fmt[plane].sizeimage != length)
-			printf("Warning: bytes used %u != image size %u for plane %u\n",
-			       length, dev->plane_fmt[plane].sizeimage, plane);
+			print("Warning: bytes used %u != image size %u for plane %u\n",
+			       length, dev->plane_fmt[plane].sizeimage, plane); */
 
 		if (buffer->padding[plane] == 0)
 			continue;
@@ -1661,16 +1664,16 @@ static void video_verify_buffer(struct device *dev, struct v4l2_buffer *buf)
 		}
 
 		if (errors) {
-			printf("Warning: %u bytes overwritten among %u first padding bytes for plane %u\n",
+			print("Warning: %u bytes overwritten among %u first padding bytes for plane %u\n",
 			       errors, dirty, plane);
 
 			dirty = (dirty + 15) & ~15;
 			dirty = dirty > 32 ? 32 : dirty;
 
 			for (i = 0; i < dirty; ++i) {
-				printf("%02x ", data[i]);
+				print("%02x ", data[i]);
 				if (i % 16 == 15)
-					printf("\n");
+					print("\n");
 			}
 		}
 	}
@@ -1680,10 +1683,10 @@ static void isp_ip_cb(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
 {
 	struct device *dev = (struct device *)port->userdata;
 	unsigned int i;
-//	printf("Buffer %p (->data %p) returned\n", buffer, buffer->data);
+//	print("Buffer %p (->data %p) returned\n", buffer, buffer->data);
 	for (i = 0; i < dev->nbufs; i++) {
 		if (dev->buffers[i].mmal == buffer) {
-//			printf("Matches V4L2 buffer index %d / %d\n", i, dev->buffers[i].idx);
+//			print("Matches V4L2 buffer index %d / %d\n", i, dev->buffers[i].idx);
 			video_queue_buffer(dev, dev->buffers[i].idx, BUFFER_FILL_NONE);
 			mmal_buffer_header_release(buffer);
 			buffer = NULL;
@@ -1691,7 +1694,7 @@ static void isp_ip_cb(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
 		}
 	}
 	if (buffer) {
-		printf("Failed to find matching V4L2 buffer for mmal buffer %p\n", buffer);
+		print("Failed to find matching V4L2 buffer for mmal buffer %p\n", buffer);
 		mmal_buffer_header_release(buffer);
 	}
 }
@@ -1700,7 +1703,7 @@ FILE *pts_file_handle;
 static void encoder_buffer_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
 {
 	MMAL_STATUS_T status;
-	//printf("Buffer %p returned, filled %d, timestamp %llu, flags %04X\n", buffer, buffer->length, buffer->pts, buffer->flags);
+	//print("Buffer %p returned, filled %d, timestamp %llu, flags %04X\n", buffer, buffer->length, buffer->pts, buffer->flags);
 	//vcos_log_error("File handle: %p", port->userdata);
 	unsigned int bytes_written = buffer->length;
 
@@ -1714,12 +1717,12 @@ static void encoder_buffer_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buf
 
 			if (bytes_written != buffer->length)
 			{
-				printf("Failed to write buffer data (%d from %d)- aborting", bytes_written, buffer->length);
+				print("Failed to write buffer data (%d from %d)- aborting", bytes_written, buffer->length);
 			}
 		}
 		else
 		{
-			printf("No file to save to\n");
+			print("No file to save to\n");
 		}
 		if (pts_file_handle &&
 		    !(buffer->flags & MMAL_BUFFER_HEADER_FLAG_CONFIG) &&
@@ -1730,7 +1733,7 @@ static void encoder_buffer_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buf
 		status = mmal_port_send_buffer(port, buffer);
 		if(status != MMAL_SUCCESS)
 		{
-			printf("mmal_port_send_buffer failed on buffer %p, status %d", buffer, status);
+			print("mmal_port_send_buffer failed on buffer %p, status %d", buffer, status);
 		}
 	}
 	else
@@ -1749,7 +1752,7 @@ static void buffers_to_isp(struct device *dev)
 }
 static void isp_output_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
 {
-	//printf("Buffer %p from isp, filled %d, timestamp %llu, flags %04X\n", buffer, buffer->length, buffer->pts, buffer->flags);
+	//print("Buffer %p from isp, filled %d, timestamp %llu, flags %04X\n", buffer, buffer->length, buffer->pts, buffer->flags);
 	//vcos_log_error("File handle: %p", port->userdata);
 	struct device *dev = (struct device*)port->userdata;
 
@@ -1778,7 +1781,7 @@ static void isp_output_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
 
 static void render_encoder_input_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
 {
-	//printf("Buffer %p returned from %s, filled %d, timestamp %llu, flags %04X\n", buffer, port->name, buffer->length, buffer->pts, buffer->flags);
+	//print("Buffer %p returned from %s, filled %d, timestamp %llu, flags %04X\n", buffer, port->name, buffer->length, buffer->pts, buffer->flags);
 	//vcos_log_error("File handle: %p", port->userdata);
 	struct device *dev = (struct device*)port->userdata;
 
@@ -1787,7 +1790,7 @@ static void render_encoder_input_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_
 	buffers_to_isp(dev);
 }
 
-#define LOG_DEBUG printf
+#define LOG_DEBUG print
 
 static void dump_port_format(MMAL_ES_FORMAT_T *format)
 {
@@ -1861,14 +1864,14 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 	status = mmal_component_create("vc.ril.isp", &dev->isp);
 	if(status != MMAL_SUCCESS)
 	{
-		printf("Failed to create isp\n");
+		print("Failed to create isp\n");
 		return -1;
 	}
 
 	status = mmal_component_create("vc.ril.video_encode", &dev->encoder);
 	if(status != MMAL_SUCCESS)
 	{
-		printf("Failed to create encoder");
+		print("Failed to create encoder");
 		return -1;
 	}
 
@@ -1876,7 +1879,7 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 	status = mmal_component_create("vc.ril.video_render", &dev->render);
 	if(status != MMAL_SUCCESS)
 	{
-		printf("Failed to create render\n");
+		print("Failed to create render\n");
 		return -1;
 	}
 	port = dev->isp->input[0];
@@ -1886,7 +1889,7 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 
 	ret = ioctl(dev->fd, VIDIOC_G_FMT, &fmt);
 	if (ret < 0) {
-		printf("Unable to get format: %s (%d).\n", strerror(errno),
+		print("Unable to get format: %s (%d).\n", strerror(errno),
 			errno);
 		return ret;
 	}
@@ -1894,7 +1897,7 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 	info = v4l2_format_by_fourcc(fmt.fmt.pix.pixelformat);
 	if (!info || info->mmal_encoding == MMAL_ENCODING_UNUSED)
 	{
-		printf("Unsupported encoding\n");
+		print("Unsupported encoding\n");
 		return -1;
 	}
 	port->format->encoding = info->mmal_encoding;
@@ -1916,7 +1919,7 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 	status = mmal_port_format_commit(port);
 	if (status != MMAL_SUCCESS)
 	{
-		printf("Commit failed\n");
+		print("Commit failed\n");
 		return -1;
 	}
 	mmal_log_dump_port(port);
@@ -1925,7 +1928,7 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 	if (mmal_stride != fmt.fmt.pix.bytesperline) {
 		if (video_set_format(dev, fmt.fmt.pix.width, fmt.fmt.pix.height, fmt.fmt.pix.pixelformat, mmal_stride,
 				     fmt.fmt.pix.sizeimage, fmt.fmt.pix.field, fmt.fmt.pix.flags) < 0) 
-			printf("Failed to adjust stride\n");
+			print("Failed to adjust stride\n");
 		else
 			// Retrieve settings again so local state is correct
 			video_get_format(dev);
@@ -1934,21 +1937,21 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 
 	if (mmal_port_parameter_set_boolean(port, MMAL_PARAMETER_ZERO_COPY, VCSM_IMPORT_DMABUF) != MMAL_SUCCESS)
 	{
-		printf("Failed to set zero copy\n");
+		print("Failed to set zero copy\n");
 		return -1;
 	}
 	dev->mmal_pool = mmal_pool_create(nbufs, 0);
 	if (!dev->mmal_pool) {
-		printf("Failed to create pool\n");
+		print("Failed to create pool\n");
 		return -1;
 	}
-	printf("Created pool of length %d, size %d\n", nbufs, 0);
+	print("Created pool of length %d, size %d\n", nbufs, 0);
 
 	port->userdata = (struct MMAL_PORT_USERDATA_T *)dev;
 	status = mmal_port_enable(port, isp_ip_cb);
 	if (status != MMAL_SUCCESS)
 	{
-		printf("ISP input enable failed\n");
+		print("ISP input enable failed\n");
 		return -1;
 	}
 
@@ -1960,7 +1963,7 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 	status = mmal_port_format_commit(port);
 	if (status != MMAL_SUCCESS)
 	{
-		printf("ISP o/p commit failed\n");
+		print("ISP o/p commit failed\n");
 		return -1;
 	}
 
@@ -2002,7 +2005,7 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 
 	if (status != MMAL_SUCCESS)
 	{
-		printf("Unable to set format on encoder output port\n");
+		print("Unable to set format on encoder output port\n");
 	}
 
 	{
@@ -2016,46 +2019,46 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 		status = mmal_port_parameter_set(encoder_output, &param.hdr);
 		if (status != MMAL_SUCCESS)
 		{
-			printf("Unable to set H264 profile\n");
+			print("Unable to set H264 profile\n");
 		}
 	}
 
 	if (mmal_port_parameter_set_boolean(encoder_input, MMAL_PARAMETER_VIDEO_IMMUTABLE_INPUT, 1) != MMAL_SUCCESS)
 	{
-		printf("Unable to set immutable input flag\n");
+		print("Unable to set immutable input flag\n");
 		// Continue rather than abort..
 	}
 
 	//set INLINE HEADER flag to generate SPS and PPS for every IDR if requested
 	if (mmal_port_parameter_set_boolean(encoder_output, MMAL_PARAMETER_VIDEO_ENCODE_INLINE_HEADER, 0) != MMAL_SUCCESS)
 	{
-		printf("failed to set INLINE HEADER FLAG parameters\n");
+		print("failed to set INLINE HEADER FLAG parameters\n");
 		// Continue rather than abort..
 	}
 
 	//set INLINE VECTORS flag to request motion vector estimates
 	if (mmal_port_parameter_set_boolean(encoder_output, MMAL_PARAMETER_VIDEO_ENCODE_INLINE_VECTORS, 0) != MMAL_SUCCESS)
 	{
-		printf("failed to set INLINE VECTORS parameters\n");
+		print("failed to set INLINE VECTORS parameters\n");
 		// Continue rather than abort..
 	}
 
 	if (status != MMAL_SUCCESS)
 	{
-		printf("Unable to set format on video encoder input port\n");
+		print("Unable to set format on video encoder input port\n");
 	}
 
-	printf("Enable encoder....\n");
+	print("Enable encoder....\n");
 	status = mmal_component_enable(dev->encoder);
 	if(status != MMAL_SUCCESS)
 	{
-		printf("Failed to enable\n");
+		print("Failed to enable\n");
 		return -1;
 	}
 	status = mmal_port_parameter_set_boolean(encoder_output, MMAL_PARAMETER_ZERO_COPY, MMAL_TRUE);
 	if(status != MMAL_SUCCESS)
 	{
-		printf("Failed to set zero copy\n");
+		print("Failed to set zero copy\n");
 		return -1;
 	}
 
@@ -2083,25 +2086,25 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 	if (status != MMAL_SUCCESS)
 		return -1;
 
-	printf("Create pool of %d buffers of size %d for encode/render\n", isp_output->buffer_num, isp_output->buffer_size);
+	print("Create pool of %d buffers of size %d for encode/render\n", isp_output->buffer_num, isp_output->buffer_size);
 	dev->isp_output_pool = mmal_port_pool_create(isp_output, isp_output->buffer_num, isp_output->buffer_size);
 	if(!dev->isp_output_pool)
 	{
-		printf("Failed to create pool\n");
+		print("Failed to create pool\n");
 		return -1;
 	}
-	printf("Create pool of %d buffers of size %d for render\n", dev->render->input[0]->buffer_num, 0);
+	print("Create pool of %d buffers of size %d for render\n", dev->render->input[0]->buffer_num, 0);
 	dev->render_pool = mmal_port_pool_create(dev->render->input[0], dev->render->input[0]->buffer_num, dev->render->input[0]->buffer_size);
 	if(!dev->render_pool)
 	{
-		printf("Failed to create render pool\n");
+		print("Failed to create render pool\n");
 		return -1;
 	}
-	printf("Create pool of %d buffers of size %d for encode ip\n", encoder_input->buffer_num, 0);
+	print("Create pool of %d buffers of size %d for encode ip\n", encoder_input->buffer_num, 0);
 	dev->encode_pool = mmal_port_pool_create(encoder_input, isp_output->buffer_num, isp_output->buffer_size);
 	if(!dev->encode_pool)
 	{
-		printf("Failed to create encode ip pool\n");
+		print("Failed to create encode ip pool\n");
 		return -1;
 	}
 	buffers_to_isp(dev);
@@ -2109,7 +2112,14 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 	// open h264 file and put the file handle in userdata for the encoder output port
 	if (do_encode)
 	{
-		encoder_output->userdata = (void*)fopen(filename, "wb");
+		if (filename[0] == '-' && filename[1] == '\0')
+		{
+			encoder_output->userdata = (void*)stdout;
+			debug = 0;
+		}
+		else
+			encoder_output->userdata = (void*)fopen(filename, "wb");
+
 		pts_file_handle = (void*)fopen("file.pts", "wb");
 		if (pts_file_handle) /* save header for mkvmerge */
 			fprintf(pts_file_handle, "# timecode format v2\n");
@@ -2119,18 +2129,18 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 
 	//Create encoder output buffers
 
-	printf("Create pool of %d buffers of size %d\n", encoder_output->buffer_num, encoder_output->buffer_size);
+	print("Create pool of %d buffers of size %d\n", encoder_output->buffer_num, encoder_output->buffer_size);
 	dev->output_pool = mmal_port_pool_create(encoder_output, encoder_output->buffer_num, encoder_output->buffer_size);
 	if(!dev->output_pool)
 	{
-		printf("Failed to create pool\n");
+		print("Failed to create pool\n");
 		return -1;
 	}
 
 	status = mmal_port_enable(encoder_output, encoder_buffer_callback);
 	if(status != MMAL_SUCCESS)
 	{
-		printf("Failed to enable port\n");
+		print("Failed to enable port\n");
 	}
 
 	unsigned int i;
@@ -2140,16 +2150,16 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 
 		if (!buffer)
 		{
-			printf("Where'd my buffer go?!\n");
+			print("Where'd my buffer go?!\n");
 			return -1;
 		}
 		status = mmal_port_send_buffer(encoder_output, buffer);
 		if(status != MMAL_SUCCESS)
 		{
-			printf("mmal_port_send_buffer failed on buffer %p, status %d\n", buffer, status);
+			print("mmal_port_send_buffer failed on buffer %p, status %d\n", buffer, status);
 			return -1;
 		}
-		printf("Sent buffer %p", buffer);
+		print("Sent buffer %p", buffer);
 	}
 
 	return 0;
@@ -2205,10 +2215,10 @@ static void video_save_image(struct device *dev, struct v4l2_buffer *buf,
 
 		ret = write(fd, data, length);
 		if (ret < 0) {
-			printf("write error: %s (%d)\n", strerror(errno), errno);
+			print("write error: %s (%d)\n", strerror(errno), errno);
 			break;
 		} else if (ret != (int)length)
-			printf("write error: only %d bytes written instead of %u\n",
+			print("write error: only %d bytes written instead of %u\n",
 			       ret, length);
 	}
 	close(fd);
@@ -2272,7 +2282,7 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 		ret = ioctl(dev->fd, VIDIOC_DQBUF, &buf);
 		if (ret < 0) {
 			if (errno != EIO) {
-				printf("Unable to dequeue buffer: %s (%d).\n",
+				print("Unable to dequeue buffer: %s (%d).\n",
 					strerror(errno), errno);
 				goto done;
 			}
@@ -2284,7 +2294,7 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 
 		if (video_is_capture(dev))
 			video_verify_buffer(dev, &buf);
-
+		print("bytesused in buffer is %d\n", buf.bytesused);
 		size += buf.bytesused;
 
 		fps = (buf.timestamp.tv_sec - last.tv_sec) * 1000000
@@ -2293,7 +2303,7 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 
 		clock_gettime(CLOCK_MONOTONIC, &ts);
 		get_ts_flags(buf.flags, &ts_type, &ts_source);
-/*		printf("%u (%u) [%c] %s %u %u B %ld.%06ld %ld.%06ld %.3f fps ts %s/%s\n", i, buf.index,
+/*		print("%u (%u) [%c] %s %u %u B %ld.%06ld %ld.%06ld %.3f fps ts %s/%s\n", i, buf.index,
 			(buf.flags & V4L2_BUF_FLAG_ERROR) ? 'E' : '-',
 			v4l2_field_name(buf.field),
 			buf.sequence, video_buffer_bytes_used(dev, &buf),
@@ -2311,20 +2321,20 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 			MMAL_BUFFER_HEADER_T *mmal = mmal_queue_get(dev->mmal_pool->queue);
 			MMAL_STATUS_T status;
 			if (!mmal) {
-				printf("Failed to get MMAL buffer\n");
+				print("Failed to get MMAL buffer\n");
 			} else {
 				/* Need to wait for MMAL to be finished with the buffer before returning to V4L2 */
 				queue_buffer = 0;
 				if (((struct buffer*)mmal->user_data)->idx != buf.index) {
-					printf("Mismatch in expected buffers. V4L2 gave idx %d, MMAL expecting %d\n",
+					print("Mismatch in expected buffers. V4L2 gave idx %d, MMAL expecting %d\n",
 						buf.index, ((struct buffer*)mmal->user_data)->idx);
 				}
-				if (buf.bytesused != buf.length)
+				/*if (buf.bytesused != buf.length)
 				{
-					printf("V4L2 buffer came back as shorter than allocated - length %u, bytesused %u\n",
+					print("V4L2 buffer came back as shorter than allocated - length %u, bytesused %u\n",
 					       buf.length, buf.bytesused);
-				}
-				mmal->length = buf.bytesused;
+				}*/
+				mmal->length = buf.length;	//Deliberately use length as MMAL wants the padding
 
 				if (!dev->starttime.tv_sec)
 					dev->starttime = buf.timestamp;
@@ -2334,7 +2344,7 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 				//MMAL PTS is in usecs, so convert from struct timeval
 				mmal->pts = (pts.tv_sec * 1000000) + pts.tv_usec;
 				if (mmal->pts > (dev->lastpts+dev->frame_time_usec+1000)) {
-					printf("DROPPED FRAME - %lld and %lld, delta %lld\n", dev->lastpts, mmal->pts, mmal->pts-dev->lastpts);
+					print("DROPPED FRAME - %lld and %lld, delta %lld\n", dev->lastpts, mmal->pts, mmal->pts-dev->lastpts);
 					dropped_frames++;
 				}
 				dev->lastpts = mmal->pts;
@@ -2343,7 +2353,7 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 				//mmal->pts = buf.timestamp;
 				status = mmal_port_send_buffer(dev->isp->input[0], mmal);
 				if (status != MMAL_SUCCESS)
-					printf("mmal_port_send_buffer failed %d\n", status);
+					print("mmal_port_send_buffer failed %d\n", status);
 			}
 		}
 
@@ -2363,7 +2373,7 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 
 		ret = video_queue_buffer(dev, buf.index, fill);
 		if (ret < 0) {
-			printf("Unable to requeue buffer: %s (%d).\n",
+			print("Unable to requeue buffer: %s (%d).\n",
 				strerror(errno), errno);
 			goto done;
 		}
@@ -2375,12 +2385,12 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 		return ret;
 
 	if (nframes == 0) {
-		printf("No frames captured.\n");
+		print("No frames captured.\n");
 		goto done;
 	}
 
 	if (ts.tv_sec == start.tv_sec && ts.tv_nsec == start.tv_nsec) {
-		printf("Captured %u frames (%u bytes) 0 seconds\n", i, size);
+		print("Captured %u frames (%u bytes) 0 seconds\n", i, size);
 		goto done;
 	}
 
@@ -2394,9 +2404,9 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 	bps = size/(ts.tv_nsec/1000.0+1000000.0*ts.tv_sec)*1000000.0;
 	fps = i/(ts.tv_nsec/1000.0+1000000.0*ts.tv_sec)*1000000.0;
 
-	printf("Captured %u frames in %lu.%06lu seconds (%f fps, %f B/s).\n",
+	print("Captured %u frames in %lu.%06lu seconds (%f fps, %f B/s).\n",
 		i, ts.tv_sec, ts.tv_nsec/1000, fps, bps);
-	printf("Total number of frames dropped %d\n", dropped_frames);
+	print("Total number of frames dropped %d\n", dropped_frames);
 done:
 	return video_free_buffers(dev);
 }
@@ -2413,7 +2423,7 @@ int video_set_dv_timings(struct device *dev)
 		//Can read DV timings, so set them.
 		ret = ioctl(dev->fd, VIDIOC_S_DV_TIMINGS, &timings);
 		if (ret < 0) {
-			printf("Failed to set DV timings\n");
+			print("Failed to set DV timings\n");
 			return -1;
 		} else {
 			double tot_height, tot_width;
@@ -2426,7 +2436,7 @@ int video_set_dv_timings(struct device *dev)
 				bt->hfrontporch + bt->hsync + bt->hbackporch;
 			dev->fps = (unsigned int)((double)bt->pixelclock /
 				(tot_width * tot_height));
-			printf("Framerate is %u\n", dev->fps);
+			print("Framerate is %u\n", dev->fps);
 		}
 	} else {
 		memset(&std, 0, sizeof std);
@@ -2435,7 +2445,7 @@ int video_set_dv_timings(struct device *dev)
 			//Can read standard, so set it.
 			ret = ioctl(dev->fd, VIDIOC_S_STD, &std);
 			if (ret < 0) {
-				printf("Failed to set standard\n");
+				print("Failed to set standard\n");
 				return -1;
 			} else {
 				// SD video - assume 50Hz / 25fps
@@ -2456,14 +2466,14 @@ int video_get_fps(struct device *dev)
 
 	ret = ioctl(dev->fd, VIDIOC_G_PARM, &parm);
 	if (ret < 0) {
-		printf("Unable to get frame rate: %s (%d).\n",
+		print("Unable to get frame rate: %s (%d).\n",
 			strerror(errno), errno);
 		/* Make a wild guess at the frame rate */
 		dev->fps = 15;
 		return ret;
 	}
 
-	printf("Current frame rate: %u/%u\n",
+	print("Current frame rate: %u/%u\n",
 		parm.parm.capture.timeperframe.numerator,
 		parm.parm.capture.timeperframe.denominator);
 
@@ -2478,51 +2488,51 @@ int video_get_fps(struct device *dev)
 
 static void usage(const char *argv0)
 {
-	printf("Usage: %s [options] device\n", argv0);
-	printf("Supported options:\n");
-	printf("-B, --buffer-type		Buffer type (\"capture\", \"output\",\n");
-	printf("                                \"capture-mplane\" or \"output-mplane\")\n");
-	printf("-c, --capture[=nframes]		Capture frames\n");
-	printf("-C, --check-overrun		Verify dequeued frames for buffer overrun\n");
-	printf("-d, --delay			Delay (in ms) before requeuing buffers\n");
-	printf("-f, --format format		Set the video format\n");
-	printf("				use -f help to list the supported formats\n");
-	printf("-E, --encode-to [file]		Set filename to write to. Default of file.h264.\n");
-	printf("-F, --file[=name]		Read/write frames from/to disk\n");
-	printf("\tFor video capture devices, the first '#' character in the file name is\n");
-	printf("\texpanded to the frame sequence number. The default file name is\n");
-	printf("\t'frame-#.bin'.\n");
-	printf("-h, --help			Show this help screen\n");
-	printf("-i, --input input		Select the video input\n");
-	printf("-I, --fill-frames		Fill frames with check pattern before queuing them\n");
-	printf("-l, --list-controls		List available controls\n");
-	printf("-n, --nbufs n			Set the number of video buffers\n");
-	printf("-p, --pause			Pause before starting the video stream\n");
-	printf("-q, --quality n			MJPEG quality (0-100)\n");
-	printf("-r, --get-control ctrl		Get control 'ctrl'\n");
-	printf("-R, --realtime=[priority]	Enable realtime RR scheduling\n");
-	printf("-s, --size WxH			Set the frame size\n");
-	printf("-t, --time-per-frame num/denom	Set the time per frame (eg. 1/25 = 25 fps)\n");
-	printf("-T, --dv-timings		Query and set the DV timings\n");
-	printf("-u, --userptr			Use the user pointers streaming method\n");
-	printf("-w, --set-control 'ctrl value'	Set control 'ctrl' to 'value'\n");
-	printf("    --buffer-prefix		Write portions of buffer before data_offset\n");
-	printf("    --buffer-size		Buffer size in bytes\n");
-	printf("    --enum-formats		Enumerate formats\n");
-	printf("    --enum-inputs		Enumerate inputs\n");
-	printf("    --fd                        Use a numeric file descriptor insted of a device\n");
-	printf("    --field			Interlaced format field order\n");
-	printf("    --log-status		Log device status\n");
-	printf("    --no-query			Don't query capabilities on open\n");
-	printf("    --offset			User pointer buffer offset from page start\n");
-	printf("    --premultiplied		Color components are premultiplied by alpha value\n");
-	printf("    --queue-late		Queue buffers after streamon, not before\n");
-	printf("    --requeue-last		Requeue the last buffers before streamoff\n");
-	printf("    --timestamp-source		Set timestamp source on output buffers [eof, soe]\n");
-	printf("    --skip n			Skip the first n frames\n");
-	printf("    --sleep-forever		Sleep forever after configuring the device\n");
-	printf("    --stride value		Line stride in bytes\n");
-	printf("-m  --mmal			Enable MMAL rendering of images\n");
+	print("Usage: %s [options] device\n", argv0);
+	print("Supported options:\n");
+	print("-B, --buffer-type		Buffer type (\"capture\", \"output\",\n");
+	print("                                \"capture-mplane\" or \"output-mplane\")\n");
+	print("-c, --capture[=nframes]		Capture frames\n");
+	print("-C, --check-overrun		Verify dequeued frames for buffer overrun\n");
+	print("-d, --delay			Delay (in ms) before requeuing buffers\n");
+	print("-f, --format format		Set the video format\n");
+	print("				use -f help to list the supported formats\n");
+	print("-E, --encode-to [file]		Set filename to write to. Default of file.h264.\n");
+	print("-F, --file[=name]		Read/write frames from/to disk\n");
+	print("\tFor video capture devices, the first '#' character in the file name is\n");
+	print("\texpanded to the frame sequence number. The default file name is\n");
+	print("\t'frame-#.bin'.\n");
+	print("-h, --help			Show this help screen\n");
+	print("-i, --input input		Select the video input\n");
+	print("-I, --fill-frames		Fill frames with check pattern before queuing them\n");
+	print("-l, --list-controls		List available controls\n");
+	print("-n, --nbufs n			Set the number of video buffers\n");
+	print("-p, --pause			Pause before starting the video stream\n");
+	print("-q, --quality n			MJPEG quality (0-100)\n");
+	print("-r, --get-control ctrl		Get control 'ctrl'\n");
+	print("-R, --realtime=[priority]	Enable realtime RR scheduling\n");
+	print("-s, --size WxH			Set the frame size\n");
+	print("-t, --time-per-frame num/denom	Set the time per frame (eg. 1/25 = 25 fps)\n");
+	print("-T, --dv-timings		Query and set the DV timings\n");
+	print("-u, --userptr			Use the user pointers streaming method\n");
+	print("-w, --set-control 'ctrl value'	Set control 'ctrl' to 'value'\n");
+	print("    --buffer-prefix		Write portions of buffer before data_offset\n");
+	print("    --buffer-size		Buffer size in bytes\n");
+	print("    --enum-formats		Enumerate formats\n");
+	print("    --enum-inputs		Enumerate inputs\n");
+	print("    --fd                        Use a numeric file descriptor insted of a device\n");
+	print("    --field			Interlaced format field order\n");
+	print("    --log-status		Log device status\n");
+	print("    --no-query			Don't query capabilities on open\n");
+	print("    --offset			User pointer buffer offset from page start\n");
+	print("    --premultiplied		Color components are premultiplied by alpha value\n");
+	print("    --queue-late		Queue buffers after streamon, not before\n");
+	print("    --requeue-last		Requeue the last buffers before streamoff\n");
+	print("    --timestamp-source		Set timestamp source on output buffers [eof, soe]\n");
+	print("    --skip n			Skip the first n frames\n");
+	print("    --sleep-forever		Sleep forever after configuring the device\n");
+	print("    --stride value		Line stride in bytes\n");
+	print("-m  --mmal			Enable MMAL rendering of images\n");
 }
 
 #define OPT_ENUM_FORMATS	256
@@ -2644,7 +2654,7 @@ int main(int argc, char *argv[])
 		case 'B':
 			ret = v4l2_buf_type_from_string(optarg);
 			if (ret == -1) {
-				printf("Bad buffer type \"%s\"\n", optarg);
+				print("Bad buffer type \"%s\"\n", optarg);
 				return 1;
 			}
 			video_set_buf_type(&dev, ret);
@@ -2661,7 +2671,7 @@ int main(int argc, char *argv[])
 			delay = atoi(optarg);
 			break;
 		case 'E':
-			printf("We're encoding to %s\n", optarg);
+			print("We're encoding to %s\n", optarg);
 			do_encode = 1;
 			if (optarg)
 				encode_filename = optarg;
@@ -2674,7 +2684,7 @@ int main(int argc, char *argv[])
 			do_set_format = 1;
 			info = v4l2_format_by_name(optarg);
 			if (info == NULL) {
-				printf("Unsupported video format '%s'\n", optarg);
+				print("Unsupported video format '%s'\n", optarg);
 				return 1;
 			}
 			pixelformat = info->fourcc;
@@ -2715,7 +2725,7 @@ int main(int argc, char *argv[])
 		case 'r':
 			ctrl_name = strtol(optarg, &endptr, 0);
 			if (*endptr != 0) {
-				printf("Invalid control name '%s'\n", optarg);
+				print("Invalid control name '%s'\n", optarg);
 				return 1;
 			}
 			do_get_control = 1;
@@ -2729,12 +2739,12 @@ int main(int argc, char *argv[])
 			do_set_format = 1;
 			width = strtol(optarg, &endptr, 10);
 			if (*endptr != 'x' || endptr == optarg) {
-				printf("Invalid size '%s'\n", optarg);
+				print("Invalid size '%s'\n", optarg);
 				return 1;
 			}
 			height = strtol(endptr + 1, &endptr, 10);
 			if (*endptr != 0) {
-				printf("Invalid size '%s'\n", optarg);
+				print("Invalid size '%s'\n", optarg);
 				return 1;
 			}
 			break;
@@ -2742,12 +2752,12 @@ int main(int argc, char *argv[])
 			do_set_time_per_frame = 1;
 			time_per_frame.numerator = strtol(optarg, &endptr, 10);
 			if (*endptr != '/' || endptr == optarg) {
-				printf("Invalid time per frame '%s'\n", optarg);
+				print("Invalid time per frame '%s'\n", optarg);
 				return 1;
 			}
 			time_per_frame.denominator = strtol(endptr + 1, &endptr, 10);
 			if (*endptr != 0) {
-				printf("Invalid time per frame '%s'\n", optarg);
+				print("Invalid time per frame '%s'\n", optarg);
 				return 1;
 			}
 			break;
@@ -2760,12 +2770,12 @@ int main(int argc, char *argv[])
 		case 'w':
 			ctrl_name = strtol(optarg, &endptr, 0);
 			if (*endptr != ' ' || endptr == optarg) {
-				printf("Invalid control name '%s'\n", optarg);
+				print("Invalid control name '%s'\n", optarg);
 				return 1;
 			}
 			ctrl_value = strtol(endptr + 1, &endptr, 0);
 			if (*endptr != 0) {
-				printf("Invalid control value '%s'\n", optarg);
+				print("Invalid control value '%s'\n", optarg);
 				return 1;
 			}
 			do_set_control = 1;
@@ -2782,16 +2792,16 @@ int main(int argc, char *argv[])
 		case OPT_FD:
 			ret = atoi(optarg);
 			if (ret < 0) {
-				printf("Bad file descriptor %d\n", ret);
+				print("Bad file descriptor %d\n", ret);
 				return 1;
 			}
-			printf("Using file descriptor %d\n", ret);
+			print("Using file descriptor %d\n", ret);
 			video_set_fd(&dev, ret);
 			break;
 		case OPT_FIELD:
 			field = v4l2_field_from_string(optarg);
 			if (field == (enum v4l2_field)-1) {
-				printf("Invalid field order '%s'\n", optarg);
+				print("Invalid field order '%s'\n", optarg);
 				return 1;
 			}
 			break;
@@ -2825,7 +2835,7 @@ int main(int argc, char *argv[])
 			} else if (!strcmp(optarg, "soe")) {
 				dev.buffer_output_flags |= V4L2_BUF_FLAG_TSTAMP_SRC_SOE;
 			} else {
-				printf("Invalid timestamp source %s\n", optarg);
+				print("Invalid timestamp source %s\n", optarg);
 				return 1;
 			}
 			break;
@@ -2836,14 +2846,14 @@ int main(int argc, char *argv[])
 			dev.write_data_prefix = true;
 			break;
 		default:
-			printf("Invalid option -%c\n", c);
-			printf("Run %s -h for help.\n", argv[0]);
+			print("Invalid option -%c\n", c);
+			print("Run %s -h for help.\n", argv[0]);
 			return 1;
 		}
 	}
 
 	if ((fill_mode & BUFFER_FILL_PADDING) && memtype != V4L2_MEMORY_USERPTR) {
-		printf("Buffer overrun can only be checked in USERPTR mode.\n");
+		print("Buffer overrun can only be checked in USERPTR mode.\n");
 		return 1;
 	}
 
@@ -2888,7 +2898,7 @@ int main(int argc, char *argv[])
 		video_list_controls(&dev);
 
 	if (do_enum_formats) {
-		printf("- Available formats:\n");
+		print("- Available formats:\n");
 		video_enum_formats(&dev, V4L2_BUF_TYPE_VIDEO_CAPTURE);
 		video_enum_formats(&dev, V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE);
 		video_enum_formats(&dev, V4L2_BUF_TYPE_VIDEO_OUTPUT);
@@ -2897,14 +2907,14 @@ int main(int argc, char *argv[])
 	}
 
 	if (do_enum_inputs) {
-		printf("- Available inputs:\n");
+		print("- Available inputs:\n");
 		video_enum_inputs(&dev);
 	}
 
 	if (do_set_input) {
 		video_set_input(&dev, input);
 		ret = video_get_input(&dev);
-		printf("Input %d selected\n", ret);
+		print("Input %d selected\n", ret);
 	}
 
 	/* Set the video format. */
@@ -2961,7 +2971,7 @@ int main(int argc, char *argv[])
 	}
 
 	if (do_pause) {
-		printf("Press enter to start capture\n");
+		print("Press enter to start capture\n");
 		getchar();
 	}
 
@@ -2970,7 +2980,7 @@ int main(int argc, char *argv[])
 		sched.sched_priority = rt_priority;
 		ret = sched_setscheduler(0, SCHED_RR, &sched);
 		if (ret < 0)
-			printf("Failed to select RR scheduler: %s (%d)\n",
+			print("Failed to select RR scheduler: %s (%d)\n",
 				strerror(errno), errno);
 	}
 
