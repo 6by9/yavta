@@ -121,6 +121,9 @@ struct device
 	bool write_data_prefix;
 
 
+	VCOS_THREAD_T save_thread;
+	MMAL_QUEUE_T *save_queue;
+	int thread_quit;
 	FILE *h264_fd;
 	FILE *pts_fd;
 };
@@ -1703,18 +1706,23 @@ static void isp_ip_cb(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
 	}
 }
 
-static void encoder_buffer_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
+static void * save_thread(void *arg)
 {
-	struct device *dev = (struct device *)port->userdata;
-
+	struct device *dev = (struct device *)arg;
+	MMAL_BUFFER_HEADER_T *buffer;
 	MMAL_STATUS_T status;
-	//print("Buffer %p returned, filled %d, timestamp %llu, flags %04X\n", buffer, buffer->length, buffer->pts, buffer->flags);
-	//vcos_log_error("File handle: %p", port->userdata);
-	unsigned int bytes_written = buffer->length;
+	unsigned int bytes_written;
 
-	if (port->is_enabled)
+	while (!dev->thread_quit)
 	{
-		if (dev->h264_fd)
+		//Being lazy and using a timed wait instead of setting up a
+		//mechanism for skipping this when destroying the thread
+		buffer = mmal_queue_timedwait(dev->save_queue, 50000);
+		if (!buffer)
+			continue;
+
+		print("Buffer %p saving, filled %d, timestamp %llu, flags %04X\n", buffer, buffer->length, buffer->pts, buffer->flags);
+			if (dev->h264_fd)
 		{
 			bytes_written = fwrite(buffer->data, 1, buffer->length, dev->h264_fd);
 			fflush(dev->h264_fd);
@@ -1734,12 +1742,24 @@ static void encoder_buffer_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buf
 			fprintf(dev->pts_fd, "%lld.%03lld\n", buffer->pts/1000, buffer->pts%1000);
 
 		buffer->length = 0;
-		status = mmal_port_send_buffer(port, buffer);
+		status = mmal_port_send_buffer(dev->encoder->output[0], buffer);
 		if(status != MMAL_SUCCESS)
 		{
 			print("mmal_port_send_buffer failed on buffer %p, status %d", buffer, status);
 		}
 	}
+	return NULL;
+}
+
+static void encoder_buffer_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
+{
+	struct device *dev = (struct device *)port->userdata;
+
+	print("Buffer %p returned, filled %d, timestamp %llu, flags %04X\n", buffer, buffer->length, buffer->pts, buffer->flags);
+	//vcos_log_error("File handle: %p", port->userdata);
+
+	if (port->is_enabled)
+		mmal_queue_put(dev->save_queue, buffer);
 	else
 		mmal_buffer_header_release(buffer);
 }
@@ -1859,11 +1879,14 @@ void mmal_log_dump_port(MMAL_PORT_T *port)
 static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *filename)
 {
 	MMAL_STATUS_T status;
+	VCOS_STATUS_T vcos_status;
 	MMAL_PORT_T *port;
 	const struct v4l2_format_info *info;
 	struct v4l2_format fmt;
 	int ret;
 	MMAL_PORT_T *isp_output, *encoder_input, *encoder_output;
+
+	//FIXME: Clean up after errors
 
 	status = mmal_component_create("vc.ril.isp", &dev->isp);
 	if(status != MMAL_SUCCESS)
@@ -2142,10 +2165,26 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 		return -1;
 	}
 
+	dev->save_queue = mmal_queue_create();
+	if(!dev->save_queue)
+	{
+		print("Failed to create queue\n");
+		return -1;
+	}
+
+	vcos_status = vcos_thread_create(&dev->save_thread, "save-thread",
+				NULL, save_thread, dev);
+	if(vcos_status != VCOS_SUCCESS)
+	{
+		print("Failed to create save thread\n");
+		return -1;
+	}
+
 	status = mmal_port_enable(encoder_output, encoder_buffer_callback);
 	if(status != MMAL_SUCCESS)
 	{
 		print("Failed to enable port\n");
+		return -1;
 	}
 
 	unsigned int i;
@@ -2168,6 +2207,13 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 	}
 
 	return 0;
+}
+
+static void destroy_mmal(struct device *dev)
+{
+	//FIXME: Clean up everything properly
+	dev->thread_quit = 1;
+	vcos_thread_join(&dev->save_thread, NULL);
 }
 
 static void video_save_image(struct device *dev, struct v4l2_buffer *buf,
@@ -2994,6 +3040,9 @@ int main(int argc, char *argv[])
 		video_close(&dev);
 		return 1;
 	}
+
+	if (do_mmal_render)
+		destroy_mmal(&dev);
 
 	video_close(&dev);
 	return 0;
