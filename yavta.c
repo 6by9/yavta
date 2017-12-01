@@ -1721,8 +1721,8 @@ static void * save_thread(void *arg)
 		if (!buffer)
 			continue;
 
-		print("Buffer %p saving, filled %d, timestamp %llu, flags %04X\n", buffer, buffer->length, buffer->pts, buffer->flags);
-			if (dev->h264_fd)
+		//print("Buffer %p saving, filled %d, timestamp %llu, flags %04X\n", buffer, buffer->length, buffer->pts, buffer->flags);
+		if (dev->h264_fd)
 		{
 			bytes_written = fwrite(buffer->data, 1, buffer->length, dev->h264_fd);
 			fflush(dev->h264_fd);
@@ -1755,7 +1755,7 @@ static void encoder_buffer_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buf
 {
 	struct device *dev = (struct device *)port->userdata;
 
-	print("Buffer %p returned, filled %d, timestamp %llu, flags %04X\n", buffer, buffer->length, buffer->pts, buffer->flags);
+	//print("Buffer %p returned, filled %d, timestamp %llu, flags %04X\n", buffer, buffer->length, buffer->pts, buffer->flags);
 	//vcos_log_error("File handle: %p", port->userdata);
 
 	if (port->is_enabled)
