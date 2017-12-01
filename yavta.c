@@ -119,6 +119,10 @@ struct device
 	unsigned int patternsize[VIDEO_MAX_PLANES];
 
 	bool write_data_prefix;
+
+
+	FILE *h264_fd;
+	FILE *pts_fd;
 };
 
 static bool video_is_mplane(struct device *dev)
@@ -1699,9 +1703,10 @@ static void isp_ip_cb(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
 	}
 }
 
-FILE *pts_file_handle;
 static void encoder_buffer_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
 {
+	struct device *dev = (struct device *)port->userdata;
+
 	MMAL_STATUS_T status;
 	//print("Buffer %p returned, filled %d, timestamp %llu, flags %04X\n", buffer, buffer->length, buffer->pts, buffer->flags);
 	//vcos_log_error("File handle: %p", port->userdata);
@@ -1709,11 +1714,10 @@ static void encoder_buffer_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buf
 
 	if (port->is_enabled)
 	{
-		FILE *file = (FILE*)port->userdata;
-		if (file)
+		if (dev->h264_fd)
 		{
-			bytes_written = fwrite(buffer->data, 1, buffer->length, file);
-			fflush(file);
+			bytes_written = fwrite(buffer->data, 1, buffer->length, dev->h264_fd);
+			fflush(dev->h264_fd);
 
 			if (bytes_written != buffer->length)
 			{
@@ -1724,10 +1728,10 @@ static void encoder_buffer_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buf
 		{
 			print("No file to save to\n");
 		}
-		if (pts_file_handle &&
+		if (dev->pts_fd &&
 		    !(buffer->flags & MMAL_BUFFER_HEADER_FLAG_CONFIG) &&
 		    buffer->pts != MMAL_TIME_UNKNOWN)
-			fprintf(pts_file_handle,"%lld.%03lld\n", buffer->pts/1000, buffer->pts%1000);
+			fprintf(dev->pts_fd, "%lld.%03lld\n", buffer->pts/1000, buffer->pts%1000);
 
 		buffer->length = 0;
 		status = mmal_port_send_buffer(port, buffer);
@@ -2113,15 +2117,17 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 	{
 		if (filename[0] == '-' && filename[1] == '\0')
 		{
-			encoder_output->userdata = (void*)stdout;
+			dev->h264_fd = stdout;
 			debug = 0;
 		}
 		else
-			encoder_output->userdata = (void*)fopen(filename, "wb");
+			dev->h264_fd = fopen(filename, "wb");
 
-		pts_file_handle = (void*)fopen("file.pts", "wb");
-		if (pts_file_handle) /* save header for mkvmerge */
-			fprintf(pts_file_handle, "# timecode format v2\n");
+		dev->pts_fd = (void*)fopen("file.pts", "wb");
+		if (dev->pts_fd) /* save header for mkvmerge */
+			fprintf(dev->pts_fd, "# timecode format v2\n");
+
+		encoder_output->userdata = (void*)dev;
 	}
 	else
 		encoder_output->userdata = NULL;
