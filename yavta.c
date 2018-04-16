@@ -1895,20 +1895,26 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 		return -1;
 	}
 
-	status = mmal_component_create("vc.ril.video_encode", &dev->encoder);
-	if(status != MMAL_SUCCESS)
+	if (do_encode)
 	{
-		print("Failed to create encoder");
-		return -1;
+		status = mmal_component_create("vc.ril.video_encode", &dev->encoder);
+		if(status != MMAL_SUCCESS)
+		{
+			print("Failed to create encoder");
+			return -1;
+		}
 	}
 
-
-	status = mmal_component_create("vc.ril.video_render", &dev->render);
-	if(status != MMAL_SUCCESS)
+	if (1)
 	{
-		print("Failed to create render\n");
-		return -1;
+		status = mmal_component_create("vc.ril.video_render", &dev->render);
+		if(status != MMAL_SUCCESS)
+		{
+			print("Failed to create render\n");
+			return -1;
+		}
 	}
+
 	port = dev->isp->input[0];
 
 	memset(&fmt, 0, sizeof fmt);
@@ -1993,122 +1999,154 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 		return -1;
 	}
 
-	//  Encoder setup
 	isp_output = dev->isp->output[0];
-	encoder_input = dev->encoder->input[0];
-	encoder_output = dev->encoder->output[0];
 
-	status = mmal_format_full_copy(encoder_input->format, isp_output->format);
-	encoder_input->buffer_num = 3;
-	if (status == MMAL_SUCCESS)
-		status = mmal_port_format_commit(encoder_input);
-	status = mmal_format_full_copy(dev->render->input[0]->format, isp_output->format);
-	dev->render->input[0]->buffer_num = 3;
-	if (status == MMAL_SUCCESS)
-		status = mmal_port_format_commit(dev->render->input[0]);
-
-	// Only supporting H264 at the moment
-	encoder_output->format->encoding = MMAL_ENCODING_H264;
-
-	encoder_output->format->bitrate = 10000000;
-	encoder_output->buffer_size = 256<<10;//encoder_output->buffer_size_recommended;
-
-	if (encoder_output->buffer_size < encoder_output->buffer_size_min)
-		encoder_output->buffer_size = encoder_output->buffer_size_min;
-
-	encoder_output->buffer_num = 8; //encoder_output->buffer_num_recommended;
-
-	if (encoder_output->buffer_num < encoder_output->buffer_num_min)
-		encoder_output->buffer_num = encoder_output->buffer_num_min;
-
-	// We need to set the frame rate on output to 0, to ensure it gets
-	// updated correctly from the input framerate when port connected
-	encoder_output->format->es->video.frame_rate.num = 0;
-	encoder_output->format->es->video.frame_rate.den = 1;
-
-	// Commit the port changes to the output port
-	status = mmal_port_format_commit(encoder_output);
-
-	if (status != MMAL_SUCCESS)
+	if (dev->render)
 	{
-		print("Unable to set format on encoder output port\n");
+		status = mmal_format_full_copy(dev->render->input[0]->format, isp_output->format);
+		dev->render->input[0]->buffer_num = 3;
+		if (status == MMAL_SUCCESS)
+			status = mmal_port_format_commit(dev->render->input[0]);
 	}
 
+	//  Encoder setup
+	if (dev->encoder)
 	{
-		MMAL_PARAMETER_VIDEO_PROFILE_T  param;
-		param.hdr.id = MMAL_PARAMETER_PROFILE;
-		param.hdr.size = sizeof(param);
+		encoder_input = dev->encoder->input[0];
+		encoder_output = dev->encoder->output[0];
 
-		param.profile[0].profile = MMAL_VIDEO_PROFILE_H264_HIGH;//state->profile;
-		param.profile[0].level = MMAL_VIDEO_LEVEL_H264_4; // This is the only value supported
+		status = mmal_format_full_copy(encoder_input->format, isp_output->format);
+		encoder_input->buffer_num = 3;
+		if (status == MMAL_SUCCESS)
+			status = mmal_port_format_commit(encoder_input);
 
-		status = mmal_port_parameter_set(encoder_output, &param.hdr);
+		// Only supporting H264 at the moment
+		encoder_output->format->encoding = MMAL_ENCODING_H264;
+
+		encoder_output->format->bitrate = 10000000;
+		encoder_output->buffer_size = 256<<10;//encoder_output->buffer_size_recommended;
+
+		if (encoder_output->buffer_size < encoder_output->buffer_size_min)
+			encoder_output->buffer_size = encoder_output->buffer_size_min;
+
+		encoder_output->buffer_num = 8; //encoder_output->buffer_num_recommended;
+
+		if (encoder_output->buffer_num < encoder_output->buffer_num_min)
+			encoder_output->buffer_num = encoder_output->buffer_num_min;
+
+		// We need to set the frame rate on output to 0, to ensure it gets
+		// updated correctly from the input framerate when port connected
+		encoder_output->format->es->video.frame_rate.num = 0;
+		encoder_output->format->es->video.frame_rate.den = 1;
+
+		// Commit the port changes to the output port
+		status = mmal_port_format_commit(encoder_output);
+
 		if (status != MMAL_SUCCESS)
 		{
-			print("Unable to set H264 profile\n");
+			print("Unable to set format on encoder output port\n");
 		}
-	}
 
-	if (mmal_port_parameter_set_boolean(encoder_input, MMAL_PARAMETER_VIDEO_IMMUTABLE_INPUT, 1) != MMAL_SUCCESS)
-	{
-		print("Unable to set immutable input flag\n");
-		// Continue rather than abort..
-	}
+		{
+			MMAL_PARAMETER_VIDEO_PROFILE_T  param;
+			param.hdr.id = MMAL_PARAMETER_PROFILE;
+			param.hdr.size = sizeof(param);
 
-	//set INLINE HEADER flag to generate SPS and PPS for every IDR if requested
-	if (mmal_port_parameter_set_boolean(encoder_output, MMAL_PARAMETER_VIDEO_ENCODE_INLINE_HEADER, 0) != MMAL_SUCCESS)
-	{
-		print("failed to set INLINE HEADER FLAG parameters\n");
-		// Continue rather than abort..
-	}
+			param.profile[0].profile = MMAL_VIDEO_PROFILE_H264_HIGH;//state->profile;
+			param.profile[0].level = MMAL_VIDEO_LEVEL_H264_4;
 
-	//set INLINE VECTORS flag to request motion vector estimates
-	if (mmal_port_parameter_set_boolean(encoder_output, MMAL_PARAMETER_VIDEO_ENCODE_INLINE_VECTORS, 0) != MMAL_SUCCESS)
-	{
-		print("failed to set INLINE VECTORS parameters\n");
-		// Continue rather than abort..
-	}
+			status = mmal_port_parameter_set(encoder_output, &param.hdr);
+			if (status != MMAL_SUCCESS)
+			{
+				print("Unable to set H264 profile\n");
+			}
+		}
 
-	if (status != MMAL_SUCCESS)
-	{
-		print("Unable to set format on video encoder input port\n");
-	}
+		if (mmal_port_parameter_set_boolean(encoder_input, MMAL_PARAMETER_VIDEO_IMMUTABLE_INPUT, 1) != MMAL_SUCCESS)
+		{
+			print("Unable to set immutable input flag\n");
+			// Continue rather than abort..
+		}
 
-	print("Enable encoder....\n");
-	status = mmal_component_enable(dev->encoder);
-	if(status != MMAL_SUCCESS)
-	{
-		print("Failed to enable\n");
-		return -1;
-	}
-	status = mmal_port_parameter_set_boolean(encoder_output, MMAL_PARAMETER_ZERO_COPY, MMAL_TRUE);
-	if(status != MMAL_SUCCESS)
-	{
-		print("Failed to set zero copy\n");
-		return -1;
+		//set INLINE HEADER flag to generate SPS and PPS for every IDR if requested
+		if (mmal_port_parameter_set_boolean(encoder_output, MMAL_PARAMETER_VIDEO_ENCODE_INLINE_HEADER, 0) != MMAL_SUCCESS)
+		{
+			print("failed to set INLINE HEADER FLAG parameters\n");
+			// Continue rather than abort..
+		}
+
+		//set INLINE VECTORS flag to request motion vector estimates
+		if (mmal_port_parameter_set_boolean(encoder_output, MMAL_PARAMETER_VIDEO_ENCODE_INLINE_VECTORS, 0) != MMAL_SUCCESS)
+		{
+			print("failed to set INLINE VECTORS parameters\n");
+			// Continue rather than abort..
+		}
+
+		if (status != MMAL_SUCCESS)
+		{
+			print("Unable to set format on video encoder input port\n");
+		}
+
+		print("Enable encoder....\n");
+		status = mmal_component_enable(dev->encoder);
+		if(status != MMAL_SUCCESS)
+		{
+			print("Failed to enable\n");
+			return -1;
+		}
+		status = mmal_port_parameter_set_boolean(encoder_output, MMAL_PARAMETER_ZERO_COPY, MMAL_TRUE);
+		status += mmal_port_parameter_set_boolean(encoder_input, MMAL_PARAMETER_ZERO_COPY, MMAL_TRUE);
+		if(status != MMAL_SUCCESS)
+		{
+			print("Failed to set zero copy\n");
+			return -1;
+		}
+		encoder_input->userdata = (struct MMAL_PORT_USERDATA_T *)dev;
 	}
 
 	status = mmal_port_parameter_set_boolean(isp_output, MMAL_PARAMETER_ZERO_COPY, MMAL_TRUE);
-	status += mmal_port_parameter_set_boolean(dev->render->input[0], MMAL_PARAMETER_ZERO_COPY, MMAL_TRUE);
-	status += mmal_port_parameter_set_boolean(encoder_input, MMAL_PARAMETER_ZERO_COPY, MMAL_TRUE);
-	if (status != MMAL_SUCCESS)
-	{
-		return -1;
-	}
 
 	isp_output->userdata = (struct MMAL_PORT_USERDATA_T *)dev;
-	dev->render->input[0]->userdata = (struct MMAL_PORT_USERDATA_T *)dev;
-	encoder_input->userdata = (struct MMAL_PORT_USERDATA_T *)dev;
+
+	if (dev->render)
+	{
+		status += mmal_port_parameter_set_boolean(dev->render->input[0], MMAL_PARAMETER_ZERO_COPY, MMAL_TRUE);
+		if (status != MMAL_SUCCESS)
+		{
+			return -1;
+		}
+
+		dev->render->input[0]->userdata = (struct MMAL_PORT_USERDATA_T *)dev;
+
+		status = mmal_port_enable(dev->render->input[0], render_encoder_input_callback);
+		if (status != MMAL_SUCCESS)
+			return -1;
+
+		print("Create pool of %d buffers of size %d for render\n", dev->render->input[0]->buffer_num, 0);
+		dev->render_pool = mmal_port_pool_create(dev->render->input[0], dev->render->input[0]->buffer_num, dev->render->input[0]->buffer_size);
+		if(!dev->render_pool)
+		{
+			print("Failed to create render pool\n");
+			return -1;
+		}
+	}
+
+	if (dev->encoder)
+	{
+		status = mmal_port_enable(encoder_input, render_encoder_input_callback);
+		if (status != MMAL_SUCCESS)
+			return -1;
+
+		print("Create pool of %d buffers of size %d for encode ip\n", encoder_input->buffer_num, 0);
+		dev->encode_pool = mmal_port_pool_create(encoder_input, isp_output->buffer_num, isp_output->buffer_size);
+		if(!dev->encode_pool)
+		{
+			print("Failed to create encode ip pool\n");
+			return -1;
+		}
+	}
 
 	status = mmal_port_enable(isp_output, isp_output_callback);
-	if (status != MMAL_SUCCESS)
-		return -1;
-
-	status = mmal_port_enable(dev->render->input[0], render_encoder_input_callback);
-	if (status != MMAL_SUCCESS)
-		return -1;
-
-	status = mmal_port_enable(encoder_input, render_encoder_input_callback);
 	if (status != MMAL_SUCCESS)
 		return -1;
 
@@ -2119,20 +2157,7 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 		print("Failed to create pool\n");
 		return -1;
 	}
-	print("Create pool of %d buffers of size %d for render\n", dev->render->input[0]->buffer_num, 0);
-	dev->render_pool = mmal_port_pool_create(dev->render->input[0], dev->render->input[0]->buffer_num, dev->render->input[0]->buffer_size);
-	if(!dev->render_pool)
-	{
-		print("Failed to create render pool\n");
-		return -1;
-	}
-	print("Create pool of %d buffers of size %d for encode ip\n", encoder_input->buffer_num, 0);
-	dev->encode_pool = mmal_port_pool_create(encoder_input, isp_output->buffer_num, isp_output->buffer_size);
-	if(!dev->encode_pool)
-	{
-		print("Failed to create encode ip pool\n");
-		return -1;
-	}
+
 	buffers_to_isp(dev);
 
 	// open h264 file and put the file handle in userdata for the encoder output port
@@ -2143,67 +2168,67 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 			dev->h264_fd = stdout;
 			debug = 0;
 		}
-		else
+		else {
+			printf("Writing data to %s\n", filename);
 			dev->h264_fd = fopen(filename, "wb");
+		}
 
 		dev->pts_fd = (void*)fopen("file.pts", "wb");
 		if (dev->pts_fd) /* save header for mkvmerge */
 			fprintf(dev->pts_fd, "# timecode format v2\n");
 
 		encoder_output->userdata = (void*)dev;
-	}
-	else
-		encoder_output->userdata = NULL;
 
-	//Create encoder output buffers
+		//Create encoder output buffers
 
-	print("Create pool of %d buffers of size %d\n", encoder_output->buffer_num, encoder_output->buffer_size);
-	dev->output_pool = mmal_port_pool_create(encoder_output, encoder_output->buffer_num, encoder_output->buffer_size);
-	if(!dev->output_pool)
-	{
-		print("Failed to create pool\n");
-		return -1;
-	}
-
-	dev->save_queue = mmal_queue_create();
-	if(!dev->save_queue)
-	{
-		print("Failed to create queue\n");
-		return -1;
-	}
-
-	vcos_status = vcos_thread_create(&dev->save_thread, "save-thread",
-				NULL, save_thread, dev);
-	if(vcos_status != VCOS_SUCCESS)
-	{
-		print("Failed to create save thread\n");
-		return -1;
-	}
-
-	status = mmal_port_enable(encoder_output, encoder_buffer_callback);
-	if(status != MMAL_SUCCESS)
-	{
-		print("Failed to enable port\n");
-		return -1;
-	}
-
-	unsigned int i;
-	for(i=0; i<encoder_output->buffer_num; i++)
-	{
-		MMAL_BUFFER_HEADER_T *buffer = mmal_queue_get(dev->output_pool->queue);
-
-		if (!buffer)
+		print("Create pool of %d buffers of size %d\n", encoder_output->buffer_num, encoder_output->buffer_size);
+		dev->output_pool = mmal_port_pool_create(encoder_output, encoder_output->buffer_num, encoder_output->buffer_size);
+		if(!dev->output_pool)
 		{
-			print("Where'd my buffer go?!\n");
+			print("Failed to create pool\n");
 			return -1;
 		}
-		status = mmal_port_send_buffer(encoder_output, buffer);
+
+		dev->save_queue = mmal_queue_create();
+		if(!dev->save_queue)
+		{
+			print("Failed to create queue\n");
+			return -1;
+		}
+
+		vcos_status = vcos_thread_create(&dev->save_thread, "save-thread",
+					NULL, save_thread, dev);
+		if(vcos_status != VCOS_SUCCESS)
+		{
+			print("Failed to create save thread\n");
+			return -1;
+		}
+
+		status = mmal_port_enable(encoder_output, encoder_buffer_callback);
 		if(status != MMAL_SUCCESS)
 		{
-			print("mmal_port_send_buffer failed on buffer %p, status %d\n", buffer, status);
+			print("Failed to enable port\n");
 			return -1;
 		}
-		print("Sent buffer %p", buffer);
+
+		unsigned int i;
+		for(i=0; i<encoder_output->buffer_num; i++)
+		{
+			MMAL_BUFFER_HEADER_T *buffer = mmal_queue_get(dev->output_pool->queue);
+
+			if (!buffer)
+			{
+				print("Where'd my buffer go?!\n");
+				return -1;
+			}
+			status = mmal_port_send_buffer(encoder_output, buffer);
+			if(status != MMAL_SUCCESS)
+			{
+				print("mmal_port_send_buffer failed on buffer %p, status %d\n", buffer, status);
+				return -1;
+			}
+			print("Sent buffer %p", buffer);
+		}
 	}
 
 	return 0;
@@ -2345,7 +2370,7 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 
 		if (video_is_capture(dev))
 			video_verify_buffer(dev, &buf);
-		print("bytesused in buffer is %d\n", buf.bytesused);
+		//print("bytesused in buffer is %d\n", buf.bytesused);
 		size += buf.bytesused;
 
 		fps = (buf.timestamp.tv_sec - last.tv_sec) * 1000000
@@ -2699,7 +2724,7 @@ int main(int argc, char *argv[])
 	video_init(&dev);
 
 	opterr = 0;
-	while ((c = getopt_long(argc, argv, "B:c::Cd:E::f:F::hi:Ilmn:pq:r:R::s:t:Tuw:", opts, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "B:c::Cd:E:f:F::hi:Ilmn:pq:r:R::s:t:Tuw:", opts, NULL)) != -1) {
 
 		switch (c) {
 		case 'B':
