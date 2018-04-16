@@ -1648,17 +1648,6 @@ static void video_verify_buffer(struct device *dev, struct v4l2_buffer *buf)
 		const uint8_t *data = buffer->mem[plane] + buffer->size[plane];
 		unsigned int errors = 0;
 		unsigned int dirty = 0;
-		unsigned int length;
-
-		if (video_is_mplane(dev))
-			length = buf->m.planes[plane].bytesused;
-		else
-			length = buf->bytesused;
-
-		/*if (dev->plane_fmt[plane].sizeimage &&
-		    dev->plane_fmt[plane].sizeimage != length)
-			print("Warning: bytes used %u != image size %u for plane %u\n",
-			       length, dev->plane_fmt[plane].sizeimage, plane); */
 
 		if (buffer->padding[plane] == 0)
 			continue;
