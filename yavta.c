@@ -2367,7 +2367,6 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 	last.tv_usec = start.tv_nsec / 1000;
 
         while (i < nframes) {
-                for (;;) {
                         fd_set fds[3];
                         fd_set *rd_fds = &fds[0]; /* for capture */
                         fd_set *ex_fds = &fds[1]; /* for capture */
@@ -2506,6 +2505,8 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 
 				fflush(stdout);
 
+				i++;
+
 				if (i >= nframes - dev->nbufs && !do_requeue_last)
 					continue;
 				if (!queue_buffer)
@@ -2517,7 +2518,6 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 						strerror(errno), errno);
 					goto done;
 				}
-				i++;
                         }
                         if (wr_fds && FD_ISSET(dev->fd, wr_fds)) {
                             fprintf(stderr, "Writing?!?!?\n");
@@ -2527,7 +2527,6 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
                             handle_event(dev);
                         }
                         /* EAGAIN - continue select loop. */
-                }
         }
 
 
