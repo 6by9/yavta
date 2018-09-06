@@ -1712,7 +1712,7 @@ static void * save_thread(void *arg)
 	{
 		//Being lazy and using a timed wait instead of setting up a
 		//mechanism for skipping this when destroying the thread
-		buffer = mmal_queue_timedwait(dev->save_queue, 50000);
+		buffer = mmal_queue_timedwait(dev->save_queue, 500);
 		if (!buffer)
 			continue;
 
@@ -2442,13 +2442,13 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 
 			clock_gettime(CLOCK_MONOTONIC, &ts);
 			get_ts_flags(buf.flags, &ts_type, &ts_source);
-	/*		print("%u (%u) [%c] %s %u %u B %ld.%06ld %ld.%06ld %.3f fps ts %s/%s\n", i, buf.index,
+			print("%u (%u) [%c] %s %u %u B %ld.%06ld %ld.%06ld %.3f fps ts %s/%s\n", i, buf.index,
 				(buf.flags & V4L2_BUF_FLAG_ERROR) ? 'E' : '-',
 				v4l2_field_name(buf.field),
 				buf.sequence, video_buffer_bytes_used(dev, &buf),
 				buf.timestamp.tv_sec, buf.timestamp.tv_usec,
 				ts.tv_sec, ts.tv_nsec/1000, fps,
-				ts_type, ts_source);*/
+				ts_type, ts_source);
 
 			last = buf.timestamp;
 
