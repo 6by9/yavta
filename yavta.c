@@ -2629,8 +2629,8 @@ int video_get_fps(struct device *dev)
 		parm.parm.capture.timeperframe.numerator,
 		parm.parm.capture.timeperframe.denominator);
 
-	dev->fps = parm.parm.capture.timeperframe.numerator/
-			parm.parm.capture.timeperframe.denominator;
+	dev->fps = parm.parm.capture.timeperframe.denominator/
+			parm.parm.capture.timeperframe.numerator;
 
 	return 0;
 }
