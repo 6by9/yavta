@@ -2385,8 +2385,8 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
                 }
 
                 if (wr_fds) {
-                //    FD_ZERO(wr_fds);
-                //    FD_SET(fd, wr_fds);
+                    FD_ZERO(wr_fds);
+                    FD_SET(dev->fd, wr_fds);
                 }
 
                 /* Timeout. */
