@@ -55,8 +55,6 @@
 
 #define ARRAY_SIZE(a)	(sizeof(a)/sizeof((a)[0]))
 
-#define VCSM_IMPORT_DMABUF MMAL_TRUE
-
 int debug = 1;
 #define print(...) do { if (debug) printf(__VA_ARGS__); }  while (0)
 
@@ -94,6 +92,8 @@ struct device
 	MMAL_POOL_T *isp_output_pool;
 	MMAL_POOL_T *render_pool;
 	MMAL_POOL_T *encode_pool;
+
+	MMAL_BOOL_T can_zero_copy;
 
 	/* V4L2 to MMAL interface */
 	MMAL_QUEUE_T *isp_queue;
@@ -828,9 +828,12 @@ static int buffer_export(int v4l2fd, enum v4l2_buf_type bt, int index, int *dmaf
 
 	print("Importing DMABUF %d into VCSM...\n", expbuf.fd);
 	vcsm_handle = vcsm_import_dmabuf(expbuf.fd, "V4L2 buf");
-	print("...done. vcsm_handle %u\n", vcsm_handle);
+	if (vcsm_handle)
+		print("...done. vcsm_handle %u\n", vcsm_handle);
+	else
+		print("...done. Failed\n", vcsm_handle);
 	*vcsm_hdl = vcsm_handle;
-	return 0;
+	return vcsm_handle ? 0 : -1;
 }
 
 static int video_buffer_mmap(struct device *dev, struct buffer *buffer,
@@ -1039,9 +1042,18 @@ static int video_alloc_buffers(struct device *dev, int nbufs,
 		if (ret < 0)
 			return ret;
 
-		if (VCSM_IMPORT_DMABUF && !buffer_export(dev->fd, dev->type, i, &buffers[i].dma_fd, &buffers[i].vcsm_handle))
+		if (!buffer_export(dev->fd, dev->type, i, &buffers[i].dma_fd, &buffers[i].vcsm_handle))
 		{
+			dev->can_zero_copy = MMAL_TRUE;
 			print("Exported buffer %d to dmabuf %d, vcsm handle %u\n", i, buffers[i].dma_fd, buffers[i].vcsm_handle);
+		}
+		else
+		{
+			if (dev->can_zero_copy)
+			{
+				print("Some buffer exported whilst others not. HELP!\n");
+				dev->can_zero_copy = MMAL_FALSE;
+			}
 		}
 		if (dev->mmal_pool) {
 			MMAL_BUFFER_HEADER_T *mmal_buf;
@@ -1052,7 +1064,7 @@ static int video_alloc_buffers(struct device *dev, int nbufs,
 			}
 			mmal_buf->user_data = &buffers[i];
 
-			if (VCSM_IMPORT_DMABUF)
+			if (dev->can_zero_copy)
 				mmal_buf->data = (uint8_t*)vcsm_vc_hdl_from_hdl(buffers[i].vcsm_handle);
 			else
 				mmal_buf->data = buffers[i].mem[0];
@@ -1989,12 +2001,6 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 			video_get_format(dev);
 	}
 
-
-	if (mmal_port_parameter_set_boolean(port, MMAL_PARAMETER_ZERO_COPY, VCSM_IMPORT_DMABUF) != MMAL_SUCCESS)
-	{
-		print("Failed to set zero copy\n");
-		return -1;
-	}
 	dev->mmal_pool = mmal_pool_create(nbufs, 0);
 	if (!dev->mmal_pool) {
 		print("Failed to create pool\n");
@@ -2003,12 +2009,6 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 	print("Created pool of length %d, size %d\n", nbufs, 0);
 
 	port->userdata = (struct MMAL_PORT_USERDATA_T *)dev;
-	status = mmal_port_enable(port, isp_ip_cb);
-	if (status != MMAL_SUCCESS)
-	{
-		print("ISP input enable failed\n");
-		return -1;
-	}
 
 	mmal_format_copy(dev->isp->output[0]->format, port->format);
 	port = dev->isp->output[0];
@@ -2254,6 +2254,24 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 		}
 	}
 
+	return 0;
+}
+
+static int enable_mmal_ip(struct device *dev)
+{
+	MMAL_STATUS_T status;
+
+	if (mmal_port_parameter_set_boolean(dev->isp->input[0], MMAL_PARAMETER_ZERO_COPY, dev->can_zero_copy) != MMAL_SUCCESS)
+	{
+		print("Failed to set zero copy\n");
+		return -1;
+	}
+	status = mmal_port_enable(dev->isp->input[0], isp_ip_cb);
+	if (status != MMAL_SUCCESS)
+	{
+		print("ISP input enable failed\n");
+		return -1;
+	}
 	return 0;
 }
 
@@ -2749,7 +2767,7 @@ static struct option opts[] = {
 int main(int argc, char *argv[])
 {
 	struct sched_param sched;
-	struct device dev;
+	struct device dev = {0};
 	int ret;
 
 	/* Options parsings */
@@ -3122,6 +3140,12 @@ int main(int argc, char *argv[])
 	}
 
 	if (video_prepare_capture(&dev, nbufs, userptr_offset, filename, fill_mode)) {
+		video_close(&dev);
+		return 1;
+	}
+
+	if (do_mmal_render && enable_mmal_ip(&dev))
+	{
 		video_close(&dev);
 		return 1;
 	}
