@@ -995,7 +995,7 @@ static int video_alloc_buffers(struct device *dev, int nbufs,
 		return ret;
 	}
 
-	print("%u buffers requested.\n", rb.count);
+	print("%u buffers requested, V4L2 returned %u bufs.\n", nbufs, rb.count);
 
 	buffers = malloc(rb.count * sizeof buffers[0]);
 	if (buffers == NULL)
@@ -2475,8 +2475,11 @@ static int video_do_capture(struct device *dev, unsigned int nframes,
 				video_save_image(dev, &buf, pattern, i);
 
 			if (dev->mmal_pool) {
-				MMAL_BUFFER_HEADER_T *mmal = mmal_queue_get(dev->mmal_pool->queue);
+				MMAL_BUFFER_HEADER_T *mmal;
 				MMAL_STATUS_T status;
+				while ((mmal = mmal_queue_get(dev->mmal_pool->queue)) && !mmal->user_data) {
+					print("Discarding MMAL buffer %p as not mapped\n", mmal);
+				}
 				if (!mmal) {
 					print("Failed to get MMAL buffer\n");
 				} else {
