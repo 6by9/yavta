@@ -313,18 +313,6 @@ static const struct v4l2_format_info *v4l2_format_by_name(const char *name)
 	return NULL;
 }
 
-static const struct v4l2_format_info *v4l2_format_by_mmal_encoding(MMAL_FOURCC_T encoding)
-{
-	unsigned int i;
-
-	for (i = 0; i < ARRAY_SIZE(pixel_formats); ++i) {
-		if (pixel_formats[i].mmal_encoding == encoding)
-			return &pixel_formats[i];
-	}
-
-	return NULL;
-}
-
 static const char *v4l2_format_name(unsigned int fourcc)
 {
 	const struct v4l2_format_info *info;
@@ -831,7 +819,7 @@ static int buffer_export(int v4l2fd, enum v4l2_buf_type bt, int index, int *dmaf
 	if (vcsm_handle)
 		print("...done. vcsm_handle %u\n", vcsm_handle);
 	else
-		print("...done. Failed\n", vcsm_handle);
+		print("...done. Failed\n");
 	*vcsm_hdl = vcsm_handle;
 	return vcsm_handle ? 0 : -1;
 }
@@ -1845,7 +1833,7 @@ static void dump_port_format(MMAL_ES_FORMAT_T *format)
    switch(format->type)
    {
    case MMAL_ES_TYPE_AUDIO:
-      LOG_DEBUG(" samplerate: %i, channels: %i, bps: %i, block align: %i",
+      LOG_DEBUG(" samplerate: %i, channels: %i, bps: %i, block align: %i\n",
                format->es->audio.sample_rate, format->es->audio.channels,
                format->es->audio.bits_per_sample, format->es->audio.block_align);
       break;
@@ -1855,7 +1843,7 @@ static void dump_port_format(MMAL_ES_FORMAT_T *format)
                format->es->video.width, format->es->video.height,
                format->es->video.crop.x, format->es->video.crop.y,
                format->es->video.crop.width, format->es->video.crop.height);
-      LOG_DEBUG(" pixel aspect ratio: %i/%i, frame rate: %i/%i",
+      LOG_DEBUG(" pixel aspect ratio: %i/%i, frame rate: %i/%i\n",
                format->es->video.par.num, format->es->video.par.den,
                format->es->video.frame_rate.num, format->es->video.frame_rate.den);
       break;
@@ -1876,7 +1864,7 @@ void mmal_log_dump_port(MMAL_PORT_T *port)
 
    dump_port_format(port->format);
 
-   LOG_DEBUG(" buffers num: %i(opt %i, min %i), size: %i(opt %i, min: %i), align: %i",
+   LOG_DEBUG("buffers num: %i(opt %i, min %i), size: %i(opt %i, min: %i), align: %i\n",
             port->buffer_num, port->buffer_num_recommended, port->buffer_num_min,
             port->buffer_size, port->buffer_size_recommended, port->buffer_size_min,
             port->buffer_alignment_min);
@@ -1919,7 +1907,7 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 	const struct v4l2_format_info *info;
 	struct v4l2_format fmt;
 	int ret;
-	MMAL_PORT_T *isp_output, *encoder_input, *encoder_output;
+	MMAL_PORT_T *isp_output, *encoder_input = NULL, *encoder_output = NULL;
 
 	//FIXME: Clean up after errors
 
@@ -1938,6 +1926,8 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 			print("Failed to create encoder");
 			return -1;
 		}
+		encoder_input = dev->encoder->input[0];
+		encoder_output = dev->encoder->output[0];
 	}
 
 	if (1)
@@ -2035,9 +2025,6 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 	//  Encoder setup
 	if (dev->encoder)
 	{
-		encoder_input = dev->encoder->input[0];
-		encoder_output = dev->encoder->output[0];
-
 		status = mmal_format_full_copy(encoder_input->format, isp_output->format);
 		encoder_input->buffer_num = 3;
 		if (status == MMAL_SUCCESS)
@@ -2184,7 +2171,7 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 	buffers_to_isp(dev);
 
 	// open h264 file and put the file handle in userdata for the encoder output port
-	if (do_encode)
+	if (dev->encoder)
 	{
 		if (filename[0] == '-' && filename[1] == '\0')
 		{
@@ -2250,7 +2237,7 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 				print("mmal_port_send_buffer failed on buffer %p, status %d\n", buffer, status);
 				return -1;
 			}
-			print("Sent buffer %p", buffer);
+			print("Sent buffer %p\n", buffer);
 		}
 	}
 
