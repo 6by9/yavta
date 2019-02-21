@@ -2003,6 +2003,11 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 	mmal_format_copy(dev->isp->output[0]->format, port->format);
 	port = dev->isp->output[0];
 	port->format->encoding = MMAL_ENCODING_I420;
+	while(port->format->es->video.crop.width > 1920)
+	{
+		port->format->es->video.crop.width >>= 1;
+		port->format->es->video.crop.height >>= 1;
+	}
 	port->buffer_num = 3;
 
 	status = mmal_port_format_commit(port);
