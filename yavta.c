@@ -199,6 +199,35 @@ static const char *v4l2_buf_type_name(enum v4l2_buf_type type)
 
 #define MMAL_ENCODING_UNUSED 0
 
+//MIPI packed monochrome images
+#ifndef MMAL_ENCODING_GREY
+#define MMAL_ENCODING_GREY    MMAL_FOURCC('G', 'R', 'E', 'Y') //8bpp Greyscale
+#endif
+#ifndef MMAL_ENCODING_Y10P
+#define MMAL_ENCODING_Y10P    MMAL_FOURCC('Y', '1', '0', 'P') //10bpp  Greyscale, MIPI RAW10 packed
+#endif
+#ifndef MMAL_ENCODING_Y12P
+#define MMAL_ENCODING_Y12P    MMAL_FOURCC('Y', '1', '2', 'P') //12bpp  Greyscale, MIPI RAW12 packed
+#endif
+#ifndef MMAL_ENCODING_Y14P
+#define MMAL_ENCODING_Y14P    MMAL_FOURCC('Y', '1', '4', 'P') //14bpp  Greyscale, MIPI RAW14 packed
+#endif
+#ifndef MMAL_ENCODING_Y16
+#define MMAL_ENCODING_Y16     MMAL_FOURCC('Y', '1', '6', ' ') //16bpp  Greyscale
+#endif
+
+
+/* Grey bit-packed formats */
+#ifndef V4L2_PIX_FMT_Y10P
+#define V4L2_PIX_FMT_Y10P    v4l2_fourcc('Y', '1', '0', 'P') /* 10  Greyscale, MIPI RAW10 packed */
+#endif
+#ifndef V4L2_PIX_FMT_Y12P
+#define V4L2_PIX_FMT_Y12P    v4l2_fourcc('Y', '1', '2', 'P') /* 12  Greyscale, MIPI RAW12 packed */
+#endif
+#ifndef V4L2_PIX_FMT_Y14P
+#define V4L2_PIX_FMT_Y14P    v4l2_fourcc('Y', '1', '4', 'P') /* 14  Greyscale, MIPI RAW12 packed */
+#endif
+
 static struct v4l2_format_info {
 	const char *name;
 	unsigned int fourcc;
@@ -226,7 +255,7 @@ static struct v4l2_format_info {
 	{ "XRGB32", V4L2_PIX_FMT_XRGB32, 1,	MMAL_ENCODING_UNUSED },
 	{ "HSV24", V4L2_PIX_FMT_HSV24, 1,	MMAL_ENCODING_UNUSED },
 	{ "HSV32", V4L2_PIX_FMT_HSV32, 1,	MMAL_ENCODING_UNUSED },
-	{ "Y8", V4L2_PIX_FMT_GREY, 1,		MMAL_ENCODING_UNUSED },
+	{ "Y8", V4L2_PIX_FMT_GREY, 1,		MMAL_ENCODING_GREY },
 	{ "Y10", V4L2_PIX_FMT_Y10, 1,		MMAL_ENCODING_UNUSED },
 	{ "Y12", V4L2_PIX_FMT_Y12, 1,		MMAL_ENCODING_UNUSED },
 	{ "Y16", V4L2_PIX_FMT_Y16, 1,		MMAL_ENCODING_UNUSED },
@@ -273,6 +302,9 @@ static struct v4l2_format_info {
 	{ "DV", V4L2_PIX_FMT_DV, 1,		MMAL_ENCODING_UNUSED },
 	{ "MJPEG", V4L2_PIX_FMT_MJPEG, 1,	MMAL_ENCODING_UNUSED },
 	{ "MPEG", V4L2_PIX_FMT_MPEG, 1,		MMAL_ENCODING_UNUSED },
+	{ "Y10P", V4L2_PIX_FMT_Y10P, 1,		MMAL_ENCODING_Y10P },
+	{ "Y12P", V4L2_PIX_FMT_Y12P, 1,		MMAL_ENCODING_Y12P },
+	{ "Y14P", V4L2_PIX_FMT_Y14P, 1,		MMAL_ENCODING_Y14P },
 };
 
 static void list_formats(void)
