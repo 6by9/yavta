@@ -1995,8 +1995,8 @@ static int setup_mmal(struct device *dev, int nbufs, int do_encode, const char *
 	port->format->es->video.crop.height = fmt.fmt.pix.height;
 	port->format->es->video.width = (port->format->es->video.crop.width+31) & ~31;
 	//mmal_encoding_stride_to_width(port->format->encoding, fmt.fmt.pix.bytesperline);
-	/* FIXME - buffer may not be aligned vertically */
-	port->format->es->video.height = (fmt.fmt.pix.height+15) & ~15;	
+	//The ISP doesn't care about padding on the height, but other components may.
+	port->format->es->video.height = fmt.fmt.pix.height;
 	//Ignore for now, but will be wanted for video encode.
 	//port->format->es->video.frame_rate.num = 10000;
 	//port->format->es->video.frame_rate.den = frame_interval ? frame_interval : 10000;
